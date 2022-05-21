@@ -64,7 +64,7 @@ async def room_create(requests: RoomCreateRequest):
 
 
 @app.get("/chat/message/{room_id}", tags=["chat"])
-async def messages(room_id: Union[str, int]):
+async def messages(room_id: str):
     """채팅방 메세지 조회"""
     pass
 
@@ -131,7 +131,7 @@ async def chat(params: ChatRequest):
         task.cancel()
 
 
-async def broadcast(room_id: Union[str, int], message: str):
+async def broadcast(room_id: str, message: str):
     await redis.publish(room_id, f'{message}')
     user_ids: list = room_id.split(":")
 

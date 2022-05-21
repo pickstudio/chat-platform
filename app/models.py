@@ -17,8 +17,8 @@ class ChatRequest:
     def __init__(
         self,
         ws: WebSocket,
-        user_id: Union[str, int] = None,
-        room_id: Union[str, int] = None,
+        user_id: Union[str, int],
+        room_id: str,
         q: Union[str, None] = None,
     ):
         self.ws = ws
