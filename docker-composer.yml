@@ -13,6 +13,8 @@ services:
       - .:/code
     ports:
       - "80:80"
+    environment:
+      - "APP_ENV=DEV"
     depends_on:
       - chat-redis
 

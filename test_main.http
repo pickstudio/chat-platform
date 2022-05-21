@@ -5,5 +5,9 @@ GET http://localhost
 Accept: application/json
 
 ### get lists
-GET http://localhost/chat/list/1
+GET http://localhost/room/list/1
+Accept: application/json
+
+### get message
+GET http://localhost/room/message/1:2
 Accept: application/json

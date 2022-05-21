@@ -7,7 +7,7 @@ class RedisSettings(BaseSettings):
     redis_password: str = Field(env="redis_password", default="")
 
     class Config:
-        env_file = '.env'
+        env_file = '.env.prod'
 
 
 class Settings(BaseSettings):
