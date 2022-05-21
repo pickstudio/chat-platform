@@ -1,0 +1,24 @@
+version: "3.9"
+
+# 실행 docker-compose up --build
+# 실행 + daemonize docker-compose up --build -d
+# 도커 종료하기 docker-compose [down / stop]
+
+services:
+  chat-api:
+    platform: linux/x86_64
+    container_name: chat-api
+    build: .
+    volumes:
+      - .:/code
+    ports:
+      - "80:80"
+    depends_on:
+      - chat-redis
+
+  chat-redis:
+    platform: linux/x86_64
+    image: redis:6.2.6
+    container_name: chat-redis
+    ports:
+      - "36379:6379" # port는 0.0.0.0:36379 을 바라봐야함

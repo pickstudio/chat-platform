@@ -1,0 +1,9 @@
+# Test your FastAPI endpoints
+
+### health check
+GET http://localhost
+Accept: application/json
+
+### get lists
+GET http://localhost/chat/list/1
+Accept: application/json
