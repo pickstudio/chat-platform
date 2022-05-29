@@ -26,13 +26,13 @@ example :
 * 메세지
 format : json
 type :
-  - date : int
+  - timestamp : bigint
   - message : str
-  - from : str, int
+  - from(user_id) : str
 example : {
   "date": 1653143651892,
-  "message": "message text",
-  "from": 5
+  "message": "hello world",
+  "from": "dd9c549dbadddd20c12f8bce48bcec581341e0dd27f764ae18af645c0dd75803"
 }
 ```
 ### 설명
