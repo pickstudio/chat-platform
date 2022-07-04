@@ -1,19 +1,17 @@
-import asyncio
-import functools
-from typing import Callable, Awaitable
+from typing import Callable, Coroutine
 
 import aioredis
 from boto3 import resource, client
 from aioredis import Redis
+from fastapi.concurrency import run_in_threadpool
 
 from app.settings import Settings
 
 settings = Settings()
 
 
-async def func_asyncio(func: Callable, **kwargs) -> Awaitable:
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, functools.partial(func, **kwargs))
+async def func_asyncio(func: Callable, **kwargs) -> Coroutine:
+    return await run_in_threadpool(func, **kwargs)
 
 
 async def get_redis_pool() -> Redis:

@@ -5,19 +5,28 @@ version: "3.9"
 # 도커 종료하기 docker-compose [down / stop]
 
 services:
-  chat-api:
-    platform: linux/x86_64
-    container_name: chat-api
-    build: .
-    volumes:
-      - .:/code
+  chat-web:
+    container_name: chat-web
+    build:
+      context: nginx/
+      dockerfile: .
     ports:
       - "80:80"
+    depends_on:
+      - chat-api
+
+  chat-api:
+    container_name: chat-api
+    build: .
+    command: gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:9000 --reload
+    volumes:
+      - .:/code
+    expose:
+      - "9000"
     depends_on:
       - chat-redis
 
   chat-redis:
-    platform: linux/x86_64
     image: redis:6.2.6
     container_name: chat-redis
     ports:

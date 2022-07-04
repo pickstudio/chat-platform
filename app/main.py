@@ -1,9 +1,8 @@
 import asyncio
 import json
 import logging
+from typing import Union
 
-import aioredis
-from aioredis import Redis
 from aioredis.client import PubSub
 from fastapi import FastAPI, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -15,30 +14,24 @@ from .db import *
 from .settings import Settings
 
 app = FastAPI()
-settings = Settings()
-logger = logging.getLogger('uvicorn')
+logger = logging.getLogger("uvicorn")
 settings = Settings()
 redis: Union[Redis, None] = None
+dynamodb: Union[client, None] = None
+
+MAX_MESSAGE_COUNT: int = 300
 
 
 @app.on_event('startup')
 async def startup() -> None:
-    global redis
+    global redis, dynamodb
     redis = await get_redis_pool()
+    dynamodb = await get_dynamo_pool()
 
 
 @app.on_event('shutdown')
 async def shutdown() -> None:
     await redis.close()
-
-
-async def get_redis_pool() -> Redis:
-    return await aioredis.from_url(
-        f'redis://{settings.redis.redis_host}',
-        password=f'{settings.redis.redis_password}',
-        encoding='utf-8',
-        decode_responses=True
-    )
 
 
 @app.get("/", response_model=HealthCheckResponse)
@@ -58,7 +51,10 @@ async def create_room(request: RoomCreateRequest) -> str:
     """채팅방 생성 -> 유저별 채팅방 리스트 추가 -> 채팅방 리턴"""
     room_id = ":".join(list(request.dict().values()))
 
-    for key, user_id in request:
+    if await redis.exists(f"room:{room_id}"):
+        return room_id
+
+    for _, user_id in request:
         await redis.sadd(f"user:{user_id}:rooms", room_id)
 
     return room_id
@@ -67,17 +63,18 @@ async def create_room(request: RoomCreateRequest) -> str:
 @app.get("/room/message/{room_id}", response_model=list, tags=["room"])
 async def messages(room_id: str) -> list:
     """채팅방 메세지 조회"""
-    return await redis.zrange(f"room:{room_id}", 0, -1)
+    logger.info('dd')
+    return await redis.zrangebyscore(f"room:{room_id}", min="-inf", max="+inf", start=0, num=MAX_MESSAGE_COUNT)
 
 
 @app.post("/chat/online/{user_id}", tags=["chat"])
-async def online(user_id: Union[str, int]) -> None:
+async def online(user_id: str) -> None:
     """온라인 상태로 변경"""
     await redis.sadd("online_users", user_id)
 
 
 @app.delete("/chat/offline/{user_id}", tags=["chat"])
-async def offline(user_id: Union[str, int]) -> None:
+async def offline(user_id: str) -> None:
     """오프라인 상태로 변경"""
     await redis.srem("online_users", user_id)
 
@@ -103,11 +100,10 @@ async def connection(params: ChatRequest):
                 if message:
                     await broadcast(params.room_id, message=message)
         except WebSocketDisconnect:
-            await redis.publish(params.room_id, f'Client {params.user_id} left the chat')
+            await leave(params.user_id, params.room_id)
 
     async def pubsub_handler(ws: WebSocket):
         """Pub/Sub 메세지 처리"""
-        await redis.publish(params.room_id, f'Client {params.user_id} joined the {params.room_id}')
         try:
             while True:
                 message = await pubsub.get_message(ignore_subscribe_messages=True)
@@ -128,28 +124,27 @@ async def connection(params: ChatRequest):
         [pubsub_task, client_task], return_when=asyncio.FIRST_EXCEPTION,
     )
 
-    await leave(params.user_id, params.room_id)
-
     for task in pending:
         logger.info(f"Canceling task: {task}")
         task.cancel()
 
 
-async def enter(user_id: Union[str, int], room_id: str) -> None:
+async def enter(user_id: str, room_id: str) -> None:
     """채팅방 접속"""
     await redis.sadd(f"room:{room_id}:online", user_id)
 
 
-async def leave(user_id: Union[str, int], room_id: str) -> None:
+async def leave(user_id: str, room_id: str) -> None:
     """채팅방 이탈"""
     await redis.srem(f"room:{room_id}:online", user_id)
 
 
 async def broadcast(room_id: str, message: dict):
     """publish + push notification"""
+    logger.info(message)
     all_user_ids: list = room_id.split(":")
-    entered_user_ids: list = await redis.smembers(f"room:{room_id}:online")
-    offline_user_ids: list = list(set(all_user_ids) ^ set(entered_user_ids))
+    online_user_ids: list = await redis.smembers(f"room:{room_id}:online")
+    offline_user_ids: list = list(set(all_user_ids) ^ set(online_user_ids))
 
     message_json: str = json.dumps(message)
 
@@ -157,7 +152,9 @@ async def broadcast(room_id: str, message: dict):
     await redis.publish(room_id, message['message'])
 
     """Push Notification"""
+    await push(offline_user_ids)
 
+    """redis """
     await redis.zadd(f'room:{room_id}', {message_json: int(message['date'])})
 
     """history"""
@@ -167,5 +164,5 @@ async def broadcast(room_id: str, message: dict):
     })
 
 
-async def push_noti(user_ids: list):
+async def push(user_ids: list):
     pass

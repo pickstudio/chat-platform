@@ -1,5 +1,3 @@
-from typing import Union
-
 from pydantic import BaseModel
 from starlette.websockets import WebSocket
 
