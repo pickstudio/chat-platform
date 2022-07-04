@@ -1,8 +1,9 @@
 import asyncio
 import functools
+from typing import Callable, Awaitable
 
 import aioredis
-import boto3
+from boto3 import resource, client
 from aioredis import Redis
 
 from app.settings import Settings
@@ -10,14 +11,9 @@ from app.settings import Settings
 settings = Settings()
 
 
-async def get_resource(**kwargs):
+async def func_asyncio(func: Callable, **kwargs) -> Awaitable:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, functools.partial(boto3.resource, **kwargs))
-
-
-async def put_items(table, **kwargs):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, functools.partial(table.put_item, **kwargs))
+    return await loop.run_in_executor(None, functools.partial(func, **kwargs))
 
 
 async def get_redis_pool() -> Redis:
@@ -30,9 +26,16 @@ async def get_redis_pool() -> Redis:
 
 
 async def get_dynamo_pool():
-    return await get_resource(
+    return await func_asyncio(
+        func=resource,
         service_name='dynamodb',
         aws_access_key_id=settings.boto3.aws_access_key_id,
         aws_secret_access_key=settings.boto3.aws_secret_access_key,
         region_name=settings.boto3.region_name
     )
+
+
+def put_item(dynamodb: client, table: str) -> Callable:
+    return dynamodb.Table(table).put_item
+
+
