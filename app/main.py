@@ -1,42 +1,32 @@
-import asyncio
 import json
 import logging
 
-import aioredis
-from aioredis import Redis
 from aioredis.client import PubSub
+from boto3 import client
 from fastapi import FastAPI, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
 from .html import html
 from .models import *
-from .settings import Settings
+from .db import *
 
 app = FastAPI()
-settings = Settings()
 logger = logging.getLogger('uvicorn')
 redis: Union[Redis, None] = None
+dynamodb: Union[client, None] = None
 
 
 @app.on_event('startup')
 async def startup() -> None:
-    global redis
+    global redis, dynamodb
     redis = await get_redis_pool()
+    dynamodb = await get_dynamo_pool()
 
 
 @app.on_event('shutdown')
 async def shutdown() -> None:
     await redis.close()
-
-
-async def get_redis_pool() -> Redis:
-    return await aioredis.from_url(
-        f'redis://{settings.redis.redis_host}',
-        password=f'{settings.redis.redis_password}',
-        encoding='utf-8',
-        decode_responses=True
-    )
 
 
 @app.get("/", response_model=HealthCheckResponse)
@@ -102,6 +92,7 @@ async def connection(params: ChatRequest):
                     await broadcast(params.room_id, message=message)
         except WebSocketDisconnect:
             await redis.publish(params.room_id, f'Client {params.user_id} left the chat')
+            await leave(params.user_id, params.room_id)
 
     async def pubsub_handler(ws: WebSocket):
         """Pub/Sub 메세지 처리"""
@@ -125,8 +116,6 @@ async def connection(params: ChatRequest):
     done, pending = await asyncio.wait(
         [pubsub_task, client_task], return_when=asyncio.FIRST_EXCEPTION,
     )
-
-    await leave(params.user_id, params.room_id)
 
     for task in pending:
         logger.info(f"Canceling task: {task}")
@@ -155,5 +144,17 @@ async def broadcast(room_id: str, message: dict):
     await redis.publish(room_id, message['message'])
 
     """Push Notification"""
+    await push_noti(offline_user_ids)
 
+    """redis """
     await redis.zadd(f'room:{room_id}', {message_json: int(message['date'])})
+
+    """history"""
+    await put_items(dynamodb.Table('pickpublic_chat'), Item={
+        'user_id': 'c',
+        'status': 0
+    })
+
+
+async def push_noti(user_ids: list):
+    pass
