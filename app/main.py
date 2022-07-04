@@ -63,7 +63,6 @@ async def create_room(request: RoomCreateRequest) -> str:
 @app.get("/room/message/{room_id}", response_model=list, tags=["room"])
 async def messages(room_id: str) -> list:
     """채팅방 메세지 조회"""
-    logger.info('dd')
     return await redis.zrangebyscore(f"room:{room_id}", min="-inf", max="+inf", start=0, num=MAX_MESSAGE_COUNT)
 
 
