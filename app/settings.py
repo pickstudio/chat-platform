@@ -1,14 +1,25 @@
-from pydantic import BaseSettings, Field
+from pydantic import BaseSettings
+
+env = ".env"
 
 
 class RedisSettings(BaseSettings):
-    redis_host: str = Field(env="redis_host", default="localhost")
-    redis_port: str = Field(env="redis_port", default="6379")
-    redis_password: str = Field(env="redis_password", default="")
+    redis_host: str
+    redis_port: str
+    redis_password: str
 
-    class Config:
-        env_file = '.env.prod'
+
+class BotoSettings(BaseSettings):
+    aws_access_key_id: str
+    aws_secret_access_key: str
+    region_name: str
+
+
+class DynamoSettings(BaseSettings):
+    table_name: str
 
 
 class Settings(BaseSettings):
-    redis: RedisSettings = RedisSettings()
+    redis: RedisSettings = RedisSettings(_env_file=env)
+    boto3: BotoSettings = BotoSettings(_env_file=env)
+    dynamodb: DynamoSettings = DynamoSettings(_env_file=env)

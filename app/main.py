@@ -11,11 +11,13 @@ from starlette.websockets import WebSocketDisconnect
 
 from .html import html
 from .models import *
+from .db import *
 from .settings import Settings
 
 app = FastAPI()
 settings = Settings()
 logger = logging.getLogger('uvicorn')
+settings = Settings()
 redis: Union[Redis, None] = None
 
 
@@ -46,13 +48,13 @@ async def health_check() -> JSONResponse:
 
 
 @app.get("/room/list/{user_id}", response_model=list, tags=["room"])
-async def room_list(user_id: Union[str, int]) -> list:
+async def get_room_list(user_id: str) -> list:
     """채팅방 리스트 조회"""
     return await redis.smembers(f"user:{user_id}:rooms")
 
 
 @app.post("/room/create", response_model=str, tags=["room"])
-async def room_create(request: RoomCreateRequest) -> str:
+async def create_room(request: RoomCreateRequest) -> str:
     """채팅방 생성 -> 유저별 채팅방 리스트 추가 -> 채팅방 리턴"""
     room_id = ":".join(list(request.dict().values()))
 
@@ -157,3 +159,13 @@ async def broadcast(room_id: str, message: dict):
     """Push Notification"""
 
     await redis.zadd(f'room:{room_id}', {message_json: int(message['date'])})
+
+    """history"""
+    await func_asyncio(put_item(dynamodb, settings.dynamodb.table_name), Item={
+        'user_id': 'c',
+        'status': 0
+    })
+
+
+async def push_noti(user_ids: list):
+    pass

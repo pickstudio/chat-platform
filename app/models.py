@@ -9,19 +9,17 @@ class HealthCheckResponse(BaseModel):
 
 
 class RoomCreateRequest(BaseModel):
-    user_id: Union[str, int]
-    target_id: Union[str, int]
+    user_id: str
+    target_id: str
 
 
 class ChatRequest:
     def __init__(
         self,
         ws: WebSocket,
-        user_id: Union[str, int],
-        room_id: str,
-        q: Union[str, None] = None,
+        user_id: str,
+        room_id: str
     ):
         self.ws = ws
         self.user_id = user_id
         self.room_id = room_id
-        self.q = q
