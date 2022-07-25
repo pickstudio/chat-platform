@@ -1,11 +1,12 @@
 import asyncio
 import json
 import logging
-from typing import Union
+from typing import Union, Any
 
 from aioredis.client import PubSub
 from fastapi import FastAPI, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.logger import logger
 from starlette.websockets import WebSocketDisconnect
 
 from .html import html
@@ -14,19 +15,22 @@ from .db import *
 from .settings import Settings
 
 app = FastAPI()
-logger = logging.getLogger("uvicorn")
 settings = Settings()
 redis: Union[Redis, None] = None
-dynamodb: Union[client, None] = None
+table: Any = None
+
+gunicorn_logger = logging.getLogger('gunicorn.error')
+logger.handlers = gunicorn_logger.handlers
+logger.setLevel(logging.DEBUG)
 
 MAX_MESSAGE_COUNT: int = 300
 
 
 @app.on_event('startup')
 async def startup() -> None:
-    global redis, dynamodb
+    global redis, table
     redis = await get_redis_pool()
-    dynamodb = await get_dynamo_pool()
+    table = await get_table(await get_dynamo())
 
 
 @app.on_event('shutdown')
@@ -157,9 +161,10 @@ async def broadcast(room_id: str, message: dict):
     await redis.zadd(f'room:{room_id}', {message_json: int(message['date'])})
 
     """history"""
-    await func_asyncio(put_item(dynamodb, settings.dynamodb.table_name), Item={
-        'user_id': 'c',
-        'status': 0
+    await func_asyncio(table.put_item, Item={
+        'user_id': message['from'],
+        'status': 0,
+        'message': message_json
     })
 
 

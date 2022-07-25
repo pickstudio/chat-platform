@@ -23,11 +23,3 @@ services:
       - .:/code
     expose:
       - "9000"
-    depends_on:
-      - chat-redis
-
-  chat-redis:
-    image: redis:6.2.6
-    container_name: chat-redis
-    ports:
-      - "6379:6379"

@@ -22,4 +22,4 @@ class DynamoSettings(BaseSettings):
 class Settings(BaseSettings):
     redis: RedisSettings = RedisSettings(_env_file=env)
     boto3: BotoSettings = BotoSettings(_env_file=env)
-    dynamodb: DynamoSettings = DynamoSettings(_env_file=env)
+    dynamo: DynamoSettings = DynamoSettings(_env_file=env)
