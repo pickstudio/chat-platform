@@ -7,7 +7,6 @@ paths:
     get:
       summary: Health Check
       description: health check
-      operationId: health_check__get
       responses:
         '200':
           description: Successful Response
@@ -15,6 +14,42 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/HealthCheckResponse"
+  # action
+  # POST 1 GET  PUT DELETE
+  # /users
+  # /users/{id}
+  # post put
+  "/users/_bulk":
+    post:
+      summary: dd
+      description: dd
+      responses:
+        '200':
+          description: Bulk use
+
+  "/rooms":
+    put:
+      summary: 방생성
+      description: dd
+      responses:
+        '200':
+          description: 방생성
+
+  "/conversations":
+    put:
+      summary: 메세지
+      description: dd
+      responses:
+        '200':
+          description: 방생성
+
+  "/websocket":
+    put:
+      summary: 메세지
+      description: dd
+      responses:
+        '200':
+          description: 방생성
 
 components:
   schemas:
