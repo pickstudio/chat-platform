@@ -1,0 +1,38 @@
+openapi: 3.0.2
+info:
+  title: ChatPlatform openapi
+  version: 0.2.0
+paths:
+  "/":
+    get:
+      summary: Health Check
+      description: health check
+      operationId: health_check__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HealthCheckResponse"
+
+components:
+  schemas:
+    HTTPValidationError:
+      title: HTTPValidationError
+      type: object
+      properties:
+        detail:
+          title: Detail
+          type: array
+          items:
+            "$ref": "#/components/schemas/ValidationError"
+    HealthCheckResponse:
+      title: HealthCheckResponse
+      required:
+        - message
+      type: object
+      properties:
+        message:
+          title: Message
+          type: string
