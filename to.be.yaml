@@ -14,42 +14,123 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/HealthCheckResponse"
-  # action
-  # POST 1 GET  PUT DELETE
-  # /users
-  # /users/{id}
-  # post put
+
   "/users/_bulk":
     post:
-      summary: dd
-      description: dd
+      summary: Registration user data
+      description: |
+        다음과 같은 호출 시점에 필요
+        1. 최초 회원가입 시
+        2. 유저 정보 수정 시
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/User"
       responses:
         '200':
-          description: Bulk use
+          description: ID와 같이 반환
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/User"
 
-  "/rooms":
-    put:
-      summary: 방생성
-      description: dd
+  "/users/token/_bulk":
+    post:
+      summary: Add a user device token
+      description: |
+        유저 디바이스 토큰 추가
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UserDeviceToken"
       responses:
         '200':
-          description: 방생성
+          description: ID와 같이 반환
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserDeviceToken"
 
-  "/conversations":
-    put:
-      summary: 메세지
-      description: dd
+  "/channels/{service}/{user_id}":
+    get:
+      summary: Return channel list
+      description: 채팅방 목록
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
       responses:
         '200':
-          description: 방생성
+          description: 방목록
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ChannelList"
 
-  "/websocket":
-    put:
-      summary: 메세지
-      description: dd
+  "/channels":
+    post:
+      summary: Create channel
+      description: 채팅방 생성
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                members:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      service:
+                        type: string
+                      user_id:
+                        type: string
+                type:
+                  type: string
+                  enum: [1_ON_1, GROUP]
       responses:
         '200':
-          description: 방생성
+          description: 채팅방 URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channel:
+                    type: string
+
+  "/channels/{channel}/messages":
+    get:
+      summary: Return channel conversations
+      description: 채팅 내역 조회
+      parameters:
+        - required: true
+          schema:
+            title: channel url
+            type: string
+          name: channel
+          in: path
+      responses:
+        '200':
+          description: 채팅 내역
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/Message"
 
 components:
   schemas:
@@ -70,4 +151,105 @@ components:
       properties:
         message:
           title: Message
+          type: string
+    User:
+      title: User
+      required:
+        - service
+        - user_id
+        - nickname
+      type: object
+      properties:
+        service:
+          type: string
+          enum: [PICKME, DIJKSTRA]
+        user_id:
+          type: string
+        nickname:
+          type: string
+        _meta:
+          type: object
+    UserDeviceToken:
+      title: User Device Token
+      required:
+        - service
+        - user_id
+        - token_type
+      type: object
+      properties:
+        service:
+          type: string
+          enum: [PICKME, DIJKSTRA]
+        user_id:
+          type: string
+        token_type:
+          type: string
+          enum: [fcm, apns]
+        fcm_device_token:
+          type: string
+        apns_device_token:
+          type: string
+    ChannelList:
+      title: ChannelList
+      type: array
+      items:
+        type: object
+        properties:
+          channel:
+            type: string
+          type:
+            type: string
+            enum: [1_ON_1, GROUP]
+          members:
+            type: array
+            items:
+              "$ref": "#/components/schemas/User"
+          last_message:
+            "$ref": "#/components/schemas/Message"
+    Message:
+      title: Message
+      type: object
+      properties:
+        message_id:
+          type: string
+        type:
+          type: string
+          enum: [PLAINTEXT, PLACE, MEDIA]
+        message:
+          type: string
+        created_at:
+          type: integer
+    RoomCreateRequest:
+      title: RoomCreateRequest
+      required:
+        - user_id
+        - target_id
+      type: object
+      properties:
+        user_id:
+          title: User Id
+          type: string
+        target_id:
+          title: Target Id
+          type: string
+    ValidationError:
+      title: ValidationError
+      required:
+        - loc
+        - msg
+        - type
+      type: object
+      properties:
+        loc:
+          title: Location
+          type: array
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
           type: string
