@@ -1,7 +1,7 @@
 openapi: 3.0.2
 info:
   title: ChatPlatform openapi
-  version: 0.2.0
+  version: '1'
 paths:
   "/":
     get:
@@ -15,7 +15,7 @@ paths:
               schema:
                 "$ref": "#/components/schemas/HealthCheckResponse"
 
-  "/users/_bulk":
+  "/users":
     post:
       summary: Registration user data
       description: |
@@ -35,11 +35,25 @@ paths:
               schema:
                 "$ref": "#/components/schemas/User"
 
-  "/users/token/_bulk":
+  "/users/{service}/{user_id}/token":
     post:
       summary: Add a user device token
       description: |
         유저 디바이스 토큰 추가
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+            enum: [PICKME, DIJKSTRA]
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
       requestBody:
         content:
           application/json:
@@ -62,6 +76,7 @@ paths:
           schema:
             title: Service from
             type: string
+            enum: [PICKME, DIJKSTRA]
           name: service
           in: path
         - required: true
@@ -131,6 +146,29 @@ paths:
                 type: array
                 items:
                   "$ref": "#/components/schemas/Message"
+
+  "/chat/{service}/{user_id}":
+    get:
+      summary: Socket
+      description: 웹소켓 프로토콜을 통해 사용
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+            enum: [PICKME, DIJKSTRA]
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
+      responses:
+        '200':
+          description: websocket
+
 
 components:
   schemas:
