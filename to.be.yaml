@@ -26,14 +26,14 @@ paths:
         content:
           application/json:
             schema:
-              "$ref": "#/components/schemas/User"
+              "$ref": "#/components/schemas/UserRequest"
       responses:
         '200':
           description: ID와 같이 반환
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/User"
+                "$ref": "#/components/schemas/UserResponse"
 
   "/users/{service}/{user_id}/token":
     post:
@@ -61,7 +61,7 @@ paths:
               "$ref": "#/components/schemas/UserDeviceToken"
       responses:
         '200':
-          description: ID와 같이 반환
+          description: Success
           content:
             application/json:
               schema:
@@ -149,7 +149,7 @@ paths:
 
   "/chat/{service}/{user_id}":
     get:
-      summary: Socket
+      summary: ws protocol
       description: 웹소켓 프로토콜을 통해 사용
       parameters:
         - required: true
@@ -190,8 +190,8 @@ components:
         message:
           title: Message
           type: string
-    User:
-      title: User
+    UserRequest:
+      title: User Request
       required:
         - service
         - user_id
@@ -205,6 +205,21 @@ components:
           type: string
         nickname:
           type: string
+        _meta:
+          type: object
+    UserResponse:
+      title: User Response
+      type: object
+      properties:
+        service:
+          type: string
+          enum: [PICKME, DIJKSTRA]
+        user_id:
+          type: string
+        nickname:
+          type: string
+        last_seen_at:
+          type: integer
         _meta:
           type: object
     UserDeviceToken:
@@ -238,12 +253,18 @@ components:
           type:
             type: string
             enum: [1_ON_1, GROUP]
+          member_count:
+            type: integer
           members:
             type: array
             items:
-              "$ref": "#/components/schemas/User"
+              "$ref": "#/components/schemas/UserResponse"
+          unread_message_count:
+            type: integer
           last_message:
             "$ref": "#/components/schemas/Message"
+          _meta:
+            type: object
     Message:
       title: Message
       type: object
@@ -255,8 +276,15 @@ components:
           enum: [PLAINTEXT, PLACE, MEDIA]
         message:
           type: string
-        created_at:
-          type: integer
+        place:
+          type: object
+          properties:
+            coordinate:
+              type: object
+            place_info:
+              type: object
+        _meta:
+          type: object
     RoomCreateRequest:
       title: RoomCreateRequest
       required:
