@@ -368,7 +368,37 @@ paths:
       responses:
         '200':
           description: websocket
-
+    post:
+      tags:
+        - ws
+      summary: ws protocol
+      description: 웹소켓 메세지
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+            enum: [PICKME, DIJKSTRA]
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/MessageRequest"
+      responses:
+        '200':
+          description: message
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Message"
 
 components:
   schemas:
@@ -504,18 +534,56 @@ components:
           type: object
           "$ref": "#/components/schemas/User"
         place:
-          type: object
-          properties:
-            coordinate:
-              type: object
-            place_info:
-              type: object
+          "$ref": "#/components/schemas/Place"
         created_at:
           type: integer
         created_by:
           "$ref": "#/components/schemas/User"
         _meta:
           type: object
+    MessageRequest:
+      title: Message Request
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [PLAINTEXT, PLACE, MEDIA]
+        message:
+          type: string
+        service:
+          type: string
+          enum: [PICKME, DIJKSTRA]
+        user_id:
+          type: string
+        place:
+          "$ref": "#/components/schemas/Place"
+        _meta:
+          type: object
+    Place:
+      title: Place Type Message
+      type: object
+      properties:
+        coordinate:
+          type: object
+          properties:
+            latitude:
+              type: integer
+            longitude:
+              type: integer
+        place_info:
+          type: object
+          properties:
+            name:
+              type: string
+            parent_name:
+              type: string
+            category:
+              type: string
+            star_point:
+              type: integer
+              format: float
+        timestamp:
+          type: integer
     ValidationError:
       title: ValidationError
       required:
