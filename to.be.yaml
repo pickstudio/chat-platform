@@ -29,13 +29,13 @@ paths:
               "$ref": "#/components/schemas/UserRequest"
       responses:
         '200':
-          description: ID와 같이 반환
+          description: Success
           content:
             application/json:
               schema:
                 "$ref": "#/components/schemas/UserResponse"
 
-  "/users/{service}/{user_id}/token":
+  "/users/{service}/{user_id}/token/{token_type}":
     post:
       summary: Add a user device token
       description: |
@@ -54,18 +54,25 @@ paths:
             type: string
           name: user_id
           in: path
+        - required: true
+          schema:
+            title: Device Token Type
+            type: string
+            enum: [FCM, APNS]
+          name: token_type
+          in: path
       requestBody:
         content:
           application/json:
             schema:
-              "$ref": "#/components/schemas/UserDeviceToken"
+              "$ref": "#/components/schemas/UserDeviceTokenRequest"
       responses:
         '200':
           description: Success
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/UserDeviceToken"
+                "$ref": "#/components/schemas/UserDeviceTokenResponse"
 
   "/channels/{service}/{user_id}":
     get:
@@ -222,19 +229,18 @@ components:
           type: integer
         _meta:
           type: object
-    UserDeviceToken:
-      title: User Device Token
-      required:
-        - service
-        - user_id
-        - token_type
+    UserDeviceTokenRequest:
+      title: User Device Token Request
       type: object
       properties:
-        service:
+        fcm_device_token:
           type: string
-          enum: [PICKME, DIJKSTRA]
-        user_id:
+        apns_device_token:
           type: string
+    UserDeviceTokenResponse:
+      title: User Device Token Response
+      type: object
+      properties:
         token_type:
           type: string
           enum: [fcm, apns]
@@ -242,6 +248,9 @@ components:
           type: string
         apns_device_token:
           type: string
+        user:
+          type: object
+          "$ref": "#/components/schemas/UserResponse"
     ChannelList:
       title: ChannelList
       type: array
@@ -276,6 +285,9 @@ components:
           enum: [PLAINTEXT, PLACE, MEDIA]
         message:
           type: string
+        user:
+          type: object
+          "$ref": "#/components/schemas/UserResponse"
         place:
           type: object
           properties:
@@ -285,19 +297,6 @@ components:
               type: object
         _meta:
           type: object
-    RoomCreateRequest:
-      title: RoomCreateRequest
-      required:
-        - user_id
-        - target_id
-      type: object
-      properties:
-        user_id:
-          title: User Id
-          type: string
-        target_id:
-          title: Target Id
-          type: string
     ValidationError:
       title: ValidationError
       required:
