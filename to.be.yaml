@@ -17,7 +17,7 @@ paths:
 
   "/users":
     post:
-      tags:
+      tags: 
         - user
       summary: Register a user
       description: 유저 정보 입력
@@ -33,10 +33,10 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/User"
-
+                
   "/users/{service}/{user_id}":
     put:
-      tags:
+      tags: 
         - user
       summary: Update a user
       description: 유저 정보 수정
@@ -67,7 +67,7 @@ paths:
               schema:
                 "$ref": "#/components/schemas/User"
     delete:
-      tags:
+      tags: 
         - user
       summary: Remove a user
       description: 유저 정보 삭제
@@ -92,10 +92,10 @@ paths:
             application/json:
               schema:
                 type: object
-
+                
   "/users/{service}/{user_id}/token/{token_type}":
     post:
-      tags:
+      tags: 
         - token
       summary: Add a user device token
       description: 유저 디바이스 토큰 추가
@@ -132,10 +132,10 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/UserDeviceTokenResponse"
-
+                
   "/users/{service}/{user_id}/token":
     delete:
-      tags:
+      tags: 
         - token
       summary: Remove all device tokens
       description: 유저 디바이스 토큰 전체 삭제
@@ -160,10 +160,10 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/User"
-
+                
   "/users/{service}/{user_id}/token/{token_type}/{token}":
     delete:
-      tags:
+      tags: 
         - token
       summary: Remove a specific device token
       description: 특정 유저 디바이스 토큰 삭제
@@ -201,10 +201,10 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/UserDeviceTokenResponse"
-
+          
   "/channels/{service}/{user_id}":
     get:
-      tags:
+      tags: 
         - channel
       summary: List channels
       description: 채팅방 목록
@@ -232,7 +232,7 @@ paths:
 
   "/channels":
     post:
-      tags:
+      tags: 
         - channel
       summary: Create a channel
       description: 채팅방 생성
@@ -265,10 +265,10 @@ paths:
                 properties:
                   channel:
                     type: string
-
+                    
   "/channels/{channel}/join":
     put:
-      tags:
+      tags: 
         - channel
       summary: Join a channel
       description: 채팅방 입장
@@ -293,10 +293,10 @@ paths:
       responses:
         '200':
           description: Success
-
+                    
   "/channels/{channel}/leave":
     put:
-      tags:
+      tags: 
         - channel
       summary: Leave a channel
       description: 채팅방 퇴장
@@ -324,7 +324,7 @@ paths:
 
   "/channels/{channel}/messages":
     get:
-      tags:
+      tags: 
         - message
       summary: List channel messages
       description: 채팅 내역 조회
@@ -344,10 +344,10 @@ paths:
                 type: array
                 items:
                   "$ref": "#/components/schemas/Message"
-
+                  
   "/chat/{service}/{user_id}":
     get:
-      tags:
+      tags: 
         - ws
       summary: ws protocol
       description: 웹소켓 프로토콜을 통해 사용
@@ -398,7 +398,7 @@ paths:
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/Message"
+                "$ref": "#/components/schemas/MessageView"
 
 components:
   schemas:
@@ -431,11 +431,13 @@ components:
           type: string
         nickname:
           type: string
+        _source:
+          type: object
         _meta:
           type: object
     UserRequest:
       title: User Register Request
-      required:
+      required: 
         - service
         - user_id
         - nickname
@@ -448,6 +450,8 @@ components:
           type: string
         nickname:
           type: string
+        _source:
+          type: object
         _meta:
           type: object
     UserUpdateRequest:
@@ -456,15 +460,17 @@ components:
       properties:
         nickname:
           type: string
+        _source:
+          type: object
         _meta:
           type: object
     UserDeviceTokenRequest:
       title: User Device Token Request
       type: object
       properties:
-        fcm_device_token:
+        user_agent:
           type: string
-        apns_device_token:
+        push_token:
           type: string
     UserDeviceTokenResponse:
       title: User Device Token Response
@@ -472,13 +478,12 @@ components:
       properties:
         token_type:
           type: string
-          enum: [fcm, apns]
-        fcm_device_token:
+          enum: [FCM, APNS]
+        user_agent:
           type: string
-        apns_device_token:
+        push_token:
           type: string
         user:
-          type: object
           "$ref": "#/components/schemas/User"
     ChannelList:
       title: Channel List
@@ -517,6 +522,8 @@ components:
             type: integer
           created_by:
             "$ref": "#/components/schemas/User"
+          _source:
+            type: object
           _meta:
             type: object
     Message:
@@ -525,41 +532,51 @@ components:
       properties:
         message_id:
           type: string
-        type:
+        view_type:
           type: string
           enum: [PLAINTEXT, PLACE, MEDIA]
-        message:
-          type: string
+        view:
+          "$ref": "#/components/schemas/MessageView"
         user:
-          type: object
           "$ref": "#/components/schemas/User"
-        place:
-          "$ref": "#/components/schemas/Place"
         created_at:
           type: integer
-        created_by:
-          "$ref": "#/components/schemas/User"
+        _source:
+          type: object
         _meta:
           type: object
     MessageRequest:
       title: Message Request
       type: object
       properties:
-        type:
-          type: string
-          enum: [PLAINTEXT, PLACE, MEDIA]
-        message:
-          type: string
         service:
           type: string
           enum: [PICKME, DIJKSTRA]
         user_id:
           type: string
-        place:
-          "$ref": "#/components/schemas/Place"
+        view_type:
+          type: string
+          enum: [PLAINTEXT, PLACE, MEDIA]
+        view:
+          "$ref": "#/components/schemas/MessageView"
+        _source:
+          type: object
         _meta:
           type: object
-    Place:
+    MessageView:
+      title: Message View
+      type: object
+      properties:
+        case_1:
+          type: object
+          properties:
+            message:
+              type: string
+        case_2:
+          "$ref": "#/components/schemas/ViewTypePlace"
+        case_3:
+          "$ref": "#/components/schemas/ViewTypeMedia"
+    ViewTypePlace:
       title: Place Type Message
       type: object
       properties:
@@ -584,6 +601,14 @@ components:
               format: float
         timestamp:
           type: integer
+    ViewTypeMedia:
+      title: Media Type Message
+      type: object
+      properties:
+        thumbnail:
+          type: string
+        url:
+          type: string
     ValidationError:
       title: ValidationError
       required:
