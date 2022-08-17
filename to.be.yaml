@@ -17,29 +17,29 @@ paths:
 
   "/users":
     post:
-      summary: Registration user data
-      description: |
-        다음과 같은 호출 시점에 필요
-        1. 최초 회원가입 시
-        2. 유저 정보 수정 시
+      tags: 
+        - user
+      summary: Register a user
+      description: 유저 정보 입력
       requestBody:
         content:
           application/json:
             schema:
               "$ref": "#/components/schemas/UserRequest"
       responses:
-        '200':
-          description: ID와 같이 반환
+        '201':
+          description: Success
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/UserResponse"
-
-  "/users/{service}/{user_id}/token":
-    post:
-      summary: Add a user device token
-      description: |
-        유저 디바이스 토큰 추가
+                "$ref": "#/components/schemas/User"
+                
+  "/users/{service}/{user_id}":
+    put:
+      tags: 
+        - user
+      summary: Update a user
+      description: 유저 정보 수정
       parameters:
         - required: true
           schema:
@@ -58,18 +58,155 @@ paths:
         content:
           application/json:
             schema:
-              "$ref": "#/components/schemas/UserDeviceToken"
+              "$ref": "#/components/schemas/UserUpdateRequest"
       responses:
         '200':
           description: Success
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/UserDeviceToken"
-
+                "$ref": "#/components/schemas/User"
+    delete:
+      tags: 
+        - user
+      summary: Remove a user
+      description: 유저 정보 삭제
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+            enum: [PICKME, DIJKSTRA]
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                
+  "/users/{service}/{user_id}/token/{token_type}":
+    post:
+      tags: 
+        - token
+      summary: Add a user device token
+      description: 유저 디바이스 토큰 추가
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+            enum: [PICKME, DIJKSTRA]
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
+        - required: true
+          schema:
+            title: Device Token Type
+            type: string
+            enum: [FCM, APNS]
+          name: token_type
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UserDeviceTokenRequest"
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserDeviceTokenResponse"
+                
+  "/users/{service}/{user_id}/token":
+    delete:
+      tags: 
+        - token
+      summary: Remove all device tokens
+      description: 유저 디바이스 토큰 전체 삭제
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+            enum: [PICKME, DIJKSTRA]
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/User"
+                
+  "/users/{service}/{user_id}/token/{token_type}/{token}":
+    delete:
+      tags: 
+        - token
+      summary: Remove a specific device token
+      description: 특정 유저 디바이스 토큰 삭제
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+            enum: [PICKME, DIJKSTRA]
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
+        - required: true
+          schema:
+            title: Device Token Type
+            type: string
+            enum: [FCM, APNS]
+          name: token_type
+          in: path
+        - required: true
+          schema:
+            title: Device Token
+            type: string
+          name: token
+          in: path
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserDeviceTokenResponse"
+          
   "/channels/{service}/{user_id}":
     get:
-      summary: Return channel list
+      tags: 
+        - channel
+      summary: List channels
       description: 채팅방 목록
       parameters:
         - required: true
@@ -95,7 +232,9 @@ paths:
 
   "/channels":
     post:
-      summary: Create channel
+      tags: 
+        - channel
+      summary: Create a channel
       description: 채팅방 생성
       requestBody:
         content:
@@ -110,13 +249,14 @@ paths:
                     properties:
                       service:
                         type: string
+                        enum: [PICKME, DIJKSTRA]
                       user_id:
                         type: string
                 type:
                   type: string
                   enum: [1_ON_1, GROUP]
       responses:
-        '200':
+        '201':
           description: 채팅방 URL
           content:
             application/json:
@@ -125,10 +265,68 @@ paths:
                 properties:
                   channel:
                     type: string
+                    
+  "/channels/{channel}/join":
+    put:
+      tags: 
+        - channel
+      summary: Join a channel
+      description: 채팅방 입장
+      parameters:
+        - required: true
+          schema:
+            title: channel url
+            type: string
+          name: channel
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                service:
+                  type: string
+                  enum: [PICKME, DIJKSTRA]
+                user_id:
+                  type: string
+      responses:
+        '200':
+          description: Success
+                    
+  "/channels/{channel}/leave":
+    put:
+      tags: 
+        - channel
+      summary: Leave a channel
+      description: 채팅방 퇴장
+      parameters:
+        - required: true
+          schema:
+            title: channel url
+            type: string
+          name: channel
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                service:
+                  type: string
+                  enum: [PICKME, DIJKSTRA]
+                user_id:
+                  type: string
+      responses:
+        '200':
+          description: Success
 
   "/channels/{channel}/messages":
     get:
-      summary: Return channel conversations
+      tags: 
+        - message
+      summary: List channel messages
       description: 채팅 내역 조회
       parameters:
         - required: true
@@ -146,9 +344,11 @@ paths:
                 type: array
                 items:
                   "$ref": "#/components/schemas/Message"
-
+                  
   "/chat/{service}/{user_id}":
     get:
+      tags: 
+        - ws
       summary: ws protocol
       description: 웹소켓 프로토콜을 통해 사용
       parameters:
@@ -168,7 +368,37 @@ paths:
       responses:
         '200':
           description: websocket
-
+    post:
+      tags:
+        - ws
+      summary: ws protocol
+      description: 웹소켓 메세지
+      parameters:
+        - required: true
+          schema:
+            title: Service from
+            type: string
+            enum: [PICKME, DIJKSTRA]
+          name: service
+          in: path
+        - required: true
+          schema:
+            title: User Id
+            type: string
+          name: user_id
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/MessageRequest"
+      responses:
+        '200':
+          description: message
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/MessageView"
 
 components:
   schemas:
@@ -190,9 +420,24 @@ components:
         message:
           title: Message
           type: string
+    User:
+      title: User Data
+      type: object
+      properties:
+        service:
+          type: string
+          enum: [PICKME, DIJKSTRA]
+        user_id:
+          type: string
+        nickname:
+          type: string
+        _source:
+          type: object
+        _meta:
+          type: object
     UserRequest:
-      title: User Request
-      required:
+      title: User Register Request
+      required: 
         - service
         - user_id
         - nickname
@@ -205,45 +450,43 @@ components:
           type: string
         nickname:
           type: string
+        _source:
+          type: object
         _meta:
           type: object
-    UserResponse:
-      title: User Response
+    UserUpdateRequest:
+      title: User Update Request
       type: object
       properties:
-        service:
-          type: string
-          enum: [PICKME, DIJKSTRA]
-        user_id:
-          type: string
         nickname:
           type: string
-        last_seen_at:
-          type: integer
+        _source:
+          type: object
         _meta:
           type: object
-    UserDeviceToken:
-      title: User Device Token
-      required:
-        - service
-        - user_id
-        - token_type
+    UserDeviceTokenRequest:
+      title: User Device Token Request
       type: object
       properties:
-        service:
+        user_agent:
           type: string
-          enum: [PICKME, DIJKSTRA]
-        user_id:
+        push_token:
           type: string
+    UserDeviceTokenResponse:
+      title: User Device Token Response
+      type: object
+      properties:
         token_type:
           type: string
-          enum: [fcm, apns]
-        fcm_device_token:
+          enum: [FCM, APNS]
+        user_agent:
           type: string
-        apns_device_token:
+        push_token:
           type: string
+        user:
+          "$ref": "#/components/schemas/User"
     ChannelList:
-      title: ChannelList
+      title: Channel List
       type: array
       items:
         type: object
@@ -258,11 +501,29 @@ components:
           members:
             type: array
             items:
-              "$ref": "#/components/schemas/UserResponse"
+              "$ref": "#/components/schemas/User"
+          last_read_at:
+            type: array
+            items:
+              type: object
+              properties:
+                (service):
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      (user_id):
+                        type: integer
           unread_message_count:
             type: integer
           last_message:
             "$ref": "#/components/schemas/Message"
+          created_at:
+            type: integer
+          created_by:
+            "$ref": "#/components/schemas/User"
+          _source:
+            type: object
           _meta:
             type: object
     Message:
@@ -271,32 +532,82 @@ components:
       properties:
         message_id:
           type: string
-        type:
+        view_type:
           type: string
           enum: [PLAINTEXT, PLACE, MEDIA]
-        message:
-          type: string
-        place:
+        view:
+          "$ref": "#/components/schemas/MessageView"
+        user:
+          "$ref": "#/components/schemas/User"
+        created_at:
+          type: integer
+        _source:
           type: object
-          properties:
-            coordinate:
-              type: object
-            place_info:
-              type: object
         _meta:
           type: object
-    RoomCreateRequest:
-      title: RoomCreateRequest
-      required:
-        - user_id
-        - target_id
+    MessageRequest:
+      title: Message Request
       type: object
       properties:
-        user_id:
-          title: User Id
+        service:
           type: string
-        target_id:
-          title: Target Id
+          enum: [PICKME, DIJKSTRA]
+        user_id:
+          type: string
+        view_type:
+          type: string
+          enum: [PLAINTEXT, PLACE, MEDIA]
+        view:
+          "$ref": "#/components/schemas/MessageView"
+        _source:
+          type: object
+        _meta:
+          type: object
+    MessageView:
+      title: Message View
+      type: object
+      properties:
+        case_1:
+          type: object
+          properties:
+            message:
+              type: string
+        case_2:
+          "$ref": "#/components/schemas/ViewTypePlace"
+        case_3:
+          "$ref": "#/components/schemas/ViewTypeMedia"
+    ViewTypePlace:
+      title: Place Type Message
+      type: object
+      properties:
+        coordinate:
+          type: object
+          properties:
+            latitude:
+              type: integer
+            longitude:
+              type: integer
+        place_info:
+          type: object
+          properties:
+            name:
+              type: string
+            parent_name:
+              type: string
+            category:
+              type: string
+            star_point:
+              type: integer
+              format: float
+        timestamp:
+          type: integer
+    ViewTypeMedia:
+      title: Media Type Message
+      type: object
+      properties:
+        thumbnail:
+          type: string
+        url:
           type: string
     ValidationError:
       title: ValidationError
