@@ -30,7 +30,8 @@ MAX_MESSAGE_COUNT: int = 300
 async def startup() -> None:
     global redis, table
     redis = await get_redis_pool()
-    table = await get_table(await get_dynamo())
+    dynamo = await get_dynamo()
+    table = await get_table(dynamo)
 
 
 @app.on_event('shutdown')
@@ -38,12 +39,80 @@ async def shutdown() -> None:
     await redis.close()
 
 
-@app.get("/", response_model=HealthCheckResponse)
-async def health_check() -> JSONResponse:
-    """health check"""
-    return JSONResponse(content={"message": "health"})
+@app.get("/", status_code=200)
+async def health_check() -> None:
+    return
 
 
+@app.post("/users", response_model=User, tags=["user"])
+async def register_user(request: User) -> User:
+    """유저 정보 등록"""
+    pass
+
+
+@app.put("/users/{service}/{user_id}", response_model=User, tags=["user"])
+async def update_user(service: Service, user_id: str, request: User) -> User:
+    """유저 정보 수정"""
+    pass
+
+
+@app.delete("/users/{service}/{user_id}", tags=["user"])
+async def delete_user(service: Service, user_id: str) -> None:
+    """유저 정보 삭제"""
+    pass
+
+
+@app.post("/users/{service}/{user_id}/tokens/{token_type}", response_model=TokenResponse, tags=["token"])
+async def register_token(service: Service, user_id: str, token_type: TokenType, request: TokenRequest) -> TokenResponse:
+    """푸시 토큰 등록"""
+    pass
+
+
+@app.delete("/users/{service}/{user_id}/tokens", tags=["token"])
+async def delete_all_tokens(service: Service, user_id: str) -> None:
+    """푸시 토큰 전체 등록 해제"""
+    pass
+
+
+@app.delete("/users/{service}/{user_id}/tokens/{token_type}/{token}", response_model=TokenObject, tags=["token"])
+async def delete_token(service: Service, user_id: str, token_type: TokenType, token: str) -> TokenObject:
+    """푸시 토큰 등록 해제"""
+    pass
+
+
+@app.get("/channels/{service}/{user_id}", response_model=list[Channel], tags=["channel"])
+async def list_channels(service: Service, user_id: str) -> list[Channel]:
+    """채팅 채널 리스트"""
+    pass
+
+
+@app.post("/channels", response_model=ChannelResponse, tags=["channel"])
+async def create_channel(request: ChannelRequest) -> ChannelResponse:
+    """채팅 채널 생성"""
+    pass
+
+
+@app.put("/channels/{channel}/join", tags=["channel"])
+async def join_channel(channel: str, request: Member) -> None:
+    """채팅 채널 입장"""
+    pass
+
+
+@app.put("/channels/{channel}/leave", tags=["channel"])
+async def join_channel(channel: str, request: Member) -> None:
+    """채팅 채널 퇴장"""
+    pass
+
+
+@app.get("/channels/{channel}/messages", response_model=list[MessageResponse], tags=["message"])
+async def list_messages(channel: str) -> list[MessageResponse]:
+    """채팅 내역 리스트"""
+    pass
+
+
+
+
+'''
 @app.get("/room/list/{user_id}", response_model=list, tags=["room"])
 async def get_room_list(user_id: str) -> list:
     """채팅방 리스트 조회"""
@@ -170,3 +239,4 @@ async def broadcast(room_id: str, message: dict):
 
 async def push(user_ids: list):
     pass
+'''
