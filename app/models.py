@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, Field
 from starlette.websockets import WebSocket
@@ -26,11 +27,9 @@ class ViewType(str, Enum):
 
 
 class User(BaseModel):
-    service: Service
-    user_id: str
     nickname: str
-    source: dict = Field(..., alias="_source")
-    meta: dict = Field(..., alias="_meta")
+    source: Optional[dict]
+    meta: Optional[dict]
 
 
 class UserObject(BaseModel):
@@ -40,23 +39,16 @@ class UserObject(BaseModel):
 
 
 class Token(BaseModel):
-    token_type: str
     user_agent: str
+    token_type: TokenType
     push_token: str
-
-
-class TokenRequest(BaseModel):
-    user_agent: str
-    push_token: str
-    source: dict = Field(..., alias="_source")
-    meta: dict = Field(..., alias="_meta")
+    source: Optional[dict]
+    meta: Optional[dict]
 
 
 class TokenResponse(BaseModel):
     tokens: list[Token]
     user: UserObject
-    source: dict = Field(..., alias="_source")
-    meta: dict = Field(..., alias="_meta")
 
 
 class TokenObject(BaseModel):
@@ -69,8 +61,8 @@ class Message(BaseModel):
     view: dict
     user: UserObject
     created_at: int
-    source: dict = Field(..., alias="_source")
-    meta: dict = Field(..., alias="_meta")
+    source: Optional[dict] = Field(..., alias="_source")
+    meta: Optional[dict] = Field(..., alias="_meta")
 
 
 class MessageResponse(BaseModel):
@@ -110,6 +102,10 @@ class ChannelResponse(BaseModel):
 class RoomCreateRequest(BaseModel):
     user_id: str
     target_id: str
+
+
+class ResponseMessage(BaseModel):
+    message: str
 
 
 class ChatRequest:

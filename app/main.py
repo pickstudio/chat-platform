@@ -1,15 +1,11 @@
-import asyncio
 import json
 import logging
 from typing import Union, Any
 
-from aioredis.client import PubSub
-from fastapi import FastAPI, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, status
+from fastapi.responses import JSONResponse
 from fastapi.logger import logger
-from starlette.websockets import WebSocketDisconnect
 
-from .html import html
 from .models import *
 from .db import *
 from .settings import Settings
@@ -27,7 +23,7 @@ MAX_MESSAGE_COUNT: int = 300
 
 
 @app.on_event('startup')
-async def startup() -> None:
+async def startup():
     global redis, table
     redis = await get_redis_pool()
     dynamo = await get_dynamo()
@@ -35,77 +31,93 @@ async def startup() -> None:
 
 
 @app.on_event('shutdown')
-async def shutdown() -> None:
+async def shutdown():
     await redis.close()
 
 
 @app.get("/", status_code=200)
-async def health_check() -> None:
+async def health_check():
     return
 
 
-@app.post("/users", response_model=User, tags=["user"])
-async def register_user(request: User) -> User:
-    """유저 정보 등록"""
-    pass
+@app.put("/users/{service}/{user_id}", response_model=UserObject, tags=["user"])
+async def upsert_user(service: Service, user_id: str, request: User):
+    """유저 정보 등록/수정"""
+    logger.info(request.dict())
 
+    await redis.hset(name=f'users#{service}', key=user_id, value=request.json(ensure_ascii=False))
 
-@app.put("/users/{service}/{user_id}", response_model=User, tags=["user"])
-async def update_user(service: Service, user_id: str, request: User) -> User:
-    """유저 정보 수정"""
-    pass
+    return UserObject(service=service, user_id=user_id, **request.dict())
 
 
 @app.delete("/users/{service}/{user_id}", tags=["user"])
-async def delete_user(service: Service, user_id: str) -> None:
+async def delete_user(service: Service, user_id: str):
     """유저 정보 삭제"""
-    pass
+    if await redis.hdel(f'users#{service}', user_id):
+        return JSONResponse({'message': f'User deleted successfully'}, status.HTTP_200_OK)
 
 
-@app.post("/users/{service}/{user_id}/tokens/{token_type}", response_model=TokenResponse, tags=["token"])
-async def register_token(service: Service, user_id: str, token_type: TokenType, request: TokenRequest) -> TokenResponse:
+@app.post("/users/{service}/{user_id}/tokens",
+          response_model=TokenResponse,
+          responses={status.HTTP_400_BAD_REQUEST: {"model": ResponseMessage}},
+          tags=["token"])
+async def register_token(service: Service, user_id: str, request: Token):
     """푸시 토큰 등록"""
-    pass
+    logger.info(request.dict())
+
+    user = await redis.hget(f'users#{service}', user_id)
+
+    if not user:
+        return JSONResponse(content={"message": "User not exist"}, status_code=status.HTTP_400_BAD_REQUEST)
+
+    key = f'users#{service}#{user_id}'
+
+    await redis.hset(name=key, key=request.token_type, value=request.json(ensure_ascii=False))
+
+    return TokenResponse(
+        tokens=list(map(lambda item: json.loads(item[1]), dict(await redis.hgetall(key)).items())),
+        user=UserObject(service=service, user_id=user_id, **json.loads(user))
+    )
 
 
 @app.delete("/users/{service}/{user_id}/tokens", tags=["token"])
-async def delete_all_tokens(service: Service, user_id: str) -> None:
+async def delete_all_tokens(service: Service, user_id: str):
     """푸시 토큰 전체 등록 해제"""
-    pass
+    await redis.delete(f'users#{service}#{user_id}')
 
 
 @app.delete("/users/{service}/{user_id}/tokens/{token_type}/{token}", response_model=TokenObject, tags=["token"])
-async def delete_token(service: Service, user_id: str, token_type: TokenType, token: str) -> TokenObject:
+async def delete_token(service: Service, user_id: str, token_type: TokenType, token: str):
     """푸시 토큰 등록 해제"""
     pass
 
 
 @app.get("/channels/{service}/{user_id}", response_model=list[Channel], tags=["channel"])
-async def list_channels(service: Service, user_id: str) -> list[Channel]:
+async def list_channels(service: Service, user_id: str):
     """채팅 채널 리스트"""
     pass
 
 
 @app.post("/channels", response_model=ChannelResponse, tags=["channel"])
-async def create_channel(request: ChannelRequest) -> ChannelResponse:
+async def create_channel(request: ChannelRequest):
     """채팅 채널 생성"""
     pass
 
 
 @app.put("/channels/{channel}/join", tags=["channel"])
-async def join_channel(channel: str, request: Member) -> None:
+async def join_channel(channel: str, request: Member):
     """채팅 채널 입장"""
     pass
 
 
 @app.put("/channels/{channel}/leave", tags=["channel"])
-async def join_channel(channel: str, request: Member) -> None:
+async def join_channel(channel: str, request: Member):
     """채팅 채널 퇴장"""
     pass
 
 
 @app.get("/channels/{channel}/messages", response_model=list[MessageResponse], tags=["message"])
-async def list_messages(channel: str) -> list[MessageResponse]:
+async def list_messages(channel: str):
     """채팅 내역 리스트"""
     pass
 
