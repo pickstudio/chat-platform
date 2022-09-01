@@ -1,10 +1,13 @@
 import json
 import logging
+import time
+import uuid
 from typing import Union, Any
 
 from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from fastapi.logger import logger
+from pydantic.json import pydantic_encoder
 
 from .models import *
 from .db import *
@@ -19,6 +22,7 @@ gunicorn_logger = logging.getLogger('gunicorn.error')
 logger.handlers = gunicorn_logger.handlers
 logger.setLevel(logging.DEBUG)
 
+THOUSAND_TIMES: int = 1000
 MAX_MESSAGE_COUNT: int = 300
 
 
@@ -40,14 +44,16 @@ async def health_check():
     return
 
 
-@app.put("/users/{service}/{user_id}", response_model=UserObject, tags=["user"])
-async def upsert_user(service: Service, user_id: str, request: User):
+@app.put("/users/{service}/{user_id}", response_model=User, tags=["user"])
+async def upsert_user(service: Service, user_id: str, request: UserRequest):
     """유저 정보 등록/수정"""
     logger.info(request.dict())
 
-    await redis.hset(name=f'users#{service}', key=user_id, value=request.json(ensure_ascii=False))
+    user = User(service=service, user_id=user_id, **request.dict())
 
-    return UserObject(service=service, user_id=user_id, **request.dict())
+    await redis.hset(name=f'users#{service}', key=user_id, value=user.json(ensure_ascii=False))
+
+    return user
 
 
 @app.delete("/users/{service}/{user_id}", tags=["user"])
@@ -58,8 +64,10 @@ async def delete_user(service: Service, user_id: str):
 
 
 @app.post("/users/{service}/{user_id}/tokens",
-          response_model=TokenResponse,
-          responses={status.HTTP_400_BAD_REQUEST: {"model": ResponseMessage}},
+          responses={
+              status.HTTP_200_OK: {"model": TokenResponse},
+              status.HTTP_400_BAD_REQUEST: {"model": ResponseMessage}
+          },
           tags=["token"])
 async def register_token(service: Service, user_id: str, request: Token):
     """푸시 토큰 등록"""
@@ -70,20 +78,20 @@ async def register_token(service: Service, user_id: str, request: Token):
     if not user:
         return JSONResponse(content={"message": "User not exist"}, status_code=status.HTTP_400_BAD_REQUEST)
 
-    key = f'users#{service}#{user_id}'
+    key = f'users#{service}#{user_id}#tokens'
 
     await redis.hset(name=key, key=request.token_type, value=request.json(ensure_ascii=False))
 
     return TokenResponse(
         tokens=list(map(lambda item: json.loads(item[1]), dict(await redis.hgetall(key)).items())),
-        user=UserObject(service=service, user_id=user_id, **json.loads(user))
+        user=user
     )
 
 
 @app.delete("/users/{service}/{user_id}/tokens", tags=["token"])
 async def delete_all_tokens(service: Service, user_id: str):
     """푸시 토큰 전체 등록 해제"""
-    await redis.delete(f'users#{service}#{user_id}')
+    await redis.delete(f'users#{service}#{user_id}#tokens')
 
 
 @app.delete("/users/{service}/{user_id}/tokens/{token_type}/{token}", response_model=TokenObject, tags=["token"])
@@ -92,16 +100,44 @@ async def delete_token(service: Service, user_id: str, token_type: TokenType, to
     pass
 
 
-@app.get("/channels/{service}/{user_id}", response_model=list[Channel], tags=["channel"])
+@app.get("/channels/{service}/{user_id}", response_model=ChannelList, tags=["channel"])
 async def list_channels(service: Service, user_id: str):
     """채팅 채널 리스트"""
-    pass
+    channel_list = await redis.lrange(f'users#{service}#{user_id}#channels', 0, -1)
+    channels = list()
+
+    for channel_id in channel_list:
+        channels.append(Channel(**await redis.hgetall(f'channels#{channel_id}')))
+
+    return ChannelList(channels=channels)
 
 
 @app.post("/channels", response_model=ChannelResponse, tags=["channel"])
 async def create_channel(request: ChannelRequest):
     """채팅 채널 생성"""
-    pass
+    logger.info(request.dict())
+
+    channel_id = str(uuid.uuid4())
+    users = list()
+
+    for member in request.members:
+        await redis.lpush(f'users#{member.service}#{member.user_id}#channels', channel_id)
+        users.append(json.loads(await redis.hget(f'users#{member.service}', member.user_id)))
+
+    channel = Channel(
+        channel=channel_id,
+        type=request.type,
+        member_count=len(request.members),
+        members=json.dumps(users, default=pydantic_encoder, ensure_ascii=False),
+        last_read_at='[]',
+        unread_message_count=0,
+        last_message='{}',
+        created_at=int(time.time() * THOUSAND_TIMES)
+    )
+
+    await redis.hset(f'channels#{channel_id}', mapping=channel.dict())
+
+    return ChannelResponse(channel=channel_id)
 
 
 @app.put("/channels/{channel}/join", tags=["channel"])

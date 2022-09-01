@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from starlette.websockets import WebSocket
 
 
@@ -26,16 +26,18 @@ class ViewType(str, Enum):
     MEDIA = "MEDIA"
 
 
-class User(BaseModel):
+class UserRequest(BaseModel):
     nickname: str
     source: Optional[dict]
     meta: Optional[dict]
 
 
-class UserObject(BaseModel):
+class User(BaseModel):
     service: Service
     user_id: str
     nickname: str
+    source: Optional[dict]
+    meta: Optional[dict]
 
 
 class Token(BaseModel):
@@ -48,21 +50,21 @@ class Token(BaseModel):
 
 class TokenResponse(BaseModel):
     tokens: list[Token]
-    user: UserObject
+    user: User
 
 
 class TokenObject(BaseModel):
     tokens: list[Token]
-    user: UserObject
+    user: User
 
 
 class Message(BaseModel):
     view_type: str
     view: dict
-    user: UserObject
+    user: User
     created_at: int
-    source: Optional[dict] = Field(..., alias="_source")
-    meta: Optional[dict] = Field(..., alias="_meta")
+    source: Optional[dict]
+    meta: Optional[dict]
 
 
 class MessageResponse(BaseModel):
@@ -70,7 +72,7 @@ class MessageResponse(BaseModel):
     view_type: str
     view: dict
     created_at: int
-    created_by: UserObject
+    created_by: User
 
 
 class Member(BaseModel):
@@ -82,12 +84,15 @@ class Channel(BaseModel):
     channel: str
     type: ChannelType
     member_count: int
-    members: list[UserObject]
-    last_read_at: list[dict]
+    members: Union[list[User], str]
+    last_read_at: Union[list[dict], str]
     unread_message_count: int
-    last_message: MessageResponse
+    last_message: Union[MessageResponse, str]
     created_at: int
-    created_by: UserObject
+
+
+class ChannelList(BaseModel):
+    channels: list[Channel]
 
 
 class ChannelRequest(BaseModel):
