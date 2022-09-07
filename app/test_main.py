@@ -34,7 +34,7 @@ def test_upsert_user(client):
 
 
 def test_register_token(client):
-    response = client.post(f"/users/{service}/{user_id}/tokens", json={
+    response = client.put(f"/users/{service}/{user_id}/tokens", json={
       "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1",
       "token_type": "APNS",
       "push_token": "740f4707 bebcf74f 9b7c25d4 8e335894 5f6aa01d a5ddb387 462c7eaf 61bb78ad",
