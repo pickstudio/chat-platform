@@ -23,11 +23,12 @@ html = """
             var ws = null;
 
             function connect(event) {
-                var client_id = document.getElementById('userText').value;
-                var room_id = document.getElementById('roomText').value;
-                document.querySelector("#ws-id").textContent = client_id;
-                document.querySelector("#ws-room-id").textContent = room_id;
-                ws = new WebSocket(`ws://localhost/chat/${client_id}/${room_id}`);
+                var user_id = 'woohyun';
+                var service = 'PICKME';
+                var channel = '68dd5df0-5afe-4884-af19-b47edd017c25';
+                document.querySelector("#ws-id").textContent = user_id;
+                document.querySelector("#ws-room-id").textContent = channel;
+                ws = new WebSocket(`ws://localhost/channels/${channel}/${service}/${user_id}`);
                 ws.onmessage = function(event) {
                     var messages = document.getElementById('messages')
                     var message = document.createElement('li')

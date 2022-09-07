@@ -58,19 +58,52 @@ class TokenObject(BaseModel):
     user: User
 
 
+class Coordinate(BaseModel):
+    latitude: float
+    longitude: float
+
+
+class PlaceInfo(BaseModel):
+    name: str
+    parent_name: str
+    category: str
+    star_point: float
+
+
+class PlainTextView(BaseModel):
+    message_id: int
+    message: str
+    source: Optional[dict]
+    meta: Optional[dict]
+
+
+class PlaceView(BaseModel):
+    message_id: int
+    coordinate: Coordinate
+    place_info: PlaceInfo
+    timestamp: int
+    source: Optional[dict]
+    meta: Optional[dict]
+
+
+class MediaView(BaseModel):
+    message_id: int
+    url: str
+    source: Optional[dict]
+    meta: Optional[dict]
+
+
 class Message(BaseModel):
-    view_type: str
-    view: dict
-    user: User
-    created_at: int
+    view_type: ViewType
+    view: Union[PlainTextView, PlaceView, MediaView]
     source: Optional[dict]
     meta: Optional[dict]
 
 
 class MessageResponse(BaseModel):
     message_id: int
-    view_type: str
-    view: dict
+    view_type: ViewType
+    view: Union[PlainTextView, PlaceView, MediaView]
     created_at: int
     created_by: User
 
@@ -85,9 +118,8 @@ class Channel(BaseModel):
     type: ChannelType
     member_count: int
     members: Union[list[User], str]
-    last_read_at: Union[list[dict], str]
     unread_message_count: int
-    last_message: Union[MessageResponse, str]
+    last_message: Union[MessageResponse, str, dict]
     created_at: int
 
 
@@ -117,9 +149,11 @@ class ChatRequest:
     def __init__(
         self,
         ws: WebSocket,
-        user_id: str,
-        room_id: str
+        channel: str,
+        service: Service,
+        user_id: str
     ):
         self.ws = ws
+        self.channel = channel
+        self.service = service
         self.user_id = user_id
-        self.room_id = room_id
