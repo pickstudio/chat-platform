@@ -71,14 +71,12 @@ class PlaceInfo(BaseModel):
 
 
 class PlainTextView(BaseModel):
-    message_id: int
     message: str
     source: Optional[dict]
     meta: Optional[dict]
 
 
 class PlaceView(BaseModel):
-    message_id: int
     coordinate: Coordinate
     place_info: PlaceInfo
     timestamp: int
@@ -87,7 +85,6 @@ class PlaceView(BaseModel):
 
 
 class MediaView(BaseModel):
-    message_id: int
     url: str
     source: Optional[dict]
     meta: Optional[dict]
@@ -101,11 +98,11 @@ class Message(BaseModel):
 
 
 class MessageResponse(BaseModel):
-    message_id: int
+    message_id: str
     view_type: ViewType
-    view: Union[PlainTextView, PlaceView, MediaView]
+    view: Union[PlainTextView, PlaceView, MediaView, str]
     created_at: int
-    created_by: User
+    created_by: Union[User, str]
 
 
 class Member(BaseModel):
@@ -118,13 +115,22 @@ class Channel(BaseModel):
     type: ChannelType
     member_count: int
     members: Union[list[User], str]
+    last_message: Union[MessageResponse, str, dict]
+    created_at: int
+
+
+class ChannelListResponse(BaseModel):
+    channel: str
+    type: ChannelType
+    member_count: int
+    members: Union[list[User], str]
     unread_message_count: int
     last_message: Union[MessageResponse, str, dict]
     created_at: int
 
 
 class ChannelList(BaseModel):
-    channels: list[Channel]
+    channels: list[ChannelListResponse]
 
 
 class ChannelRequest(BaseModel):
@@ -134,15 +140,6 @@ class ChannelRequest(BaseModel):
 
 class ChannelResponse(BaseModel):
     channel: str
-
-
-class RoomCreateRequest(BaseModel):
-    user_id: str
-    target_id: str
-
-
-class ResponseMessage(BaseModel):
-    message: str
 
 
 class ChatRequest:
@@ -155,5 +152,4 @@ class ChatRequest:
     ):
         self.ws = ws
         self.channel = channel
-        self.service = service
-        self.user_id = user_id
+        self.member = Member(service=service, user_id=user_id)
