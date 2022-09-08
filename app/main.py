@@ -1,181 +1,212 @@
 import asyncio
 import json
 import logging
-from typing import Union, Any
+import time
+import uuid
+from json import JSONDecodeError
+from typing import Any
 
 from aioredis.client import PubSub
-from fastapi import FastAPI, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, status, Depends
+from fastapi.responses import JSONResponse
 from fastapi.logger import logger
+from pydantic.json import pydantic_encoder
 from starlette.websockets import WebSocketDisconnect
 
-from .html import html
 from .models import *
 from .db import *
 from .settings import Settings
 
-app = FastAPI()
+app = FastAPI(
+    title="Pick Chat",
+    version="0.1.0",
+    description="픽스튜디오 채팅 플랫폼",
+    contact={
+        "name": "Heyho",
+        "email": "nerolizm@gmail.com"
+    }
+)
 settings = Settings()
 redis: Union[Redis, None] = None
 table: Any = None
+dynamo_client: Any = None
 
 gunicorn_logger = logging.getLogger('gunicorn.error')
 logger.handlers = gunicorn_logger.handlers
 logger.setLevel(logging.DEBUG)
 
+THOUSAND_TIMES: int = 1000
 MAX_MESSAGE_COUNT: int = 300
 
 
 @app.on_event('startup')
-async def startup() -> None:
-    global redis, table
+async def startup():
+    global redis, table, dynamo_client
     redis = await get_redis_pool()
     dynamo = await get_dynamo()
+    dynamo_client = await get_dynamo_client()
     table = await get_table(dynamo)
 
 
 @app.on_event('shutdown')
-async def shutdown() -> None:
+async def shutdown():
     await redis.close()
 
 
-@app.get("/", status_code=200)
-async def health_check() -> None:
+@app.get("/", status_code=200, include_in_schema=False)
+async def health_check():
     return
 
 
-@app.post("/users", response_model=User, tags=["user"])
-async def register_user(request: User) -> User:
-    """유저 정보 등록"""
+@app.put("/users/{service}/{user_id}", response_model=User, tags=["User"])
+async def upsert_user(service: Service, user_id: str, request: UserRequest):
+    """Register/modify user"""
+    logger.info(request.dict())
+
+    user = User(service=service, user_id=user_id, **request.dict())
+
+    await redis.hset(name=f'users#{service}', key=user_id, value=user.json(ensure_ascii=False))
+
+    return user
+
+
+@app.delete("/users/{service}/{user_id}", tags=["User"])
+async def delete_user(service: Service, user_id: str):
+    """Delete user"""
+    if await redis.hdel(f'users#{service}', user_id):
+        return JSONResponse({'message': f'User deleted successfully'}, status.HTTP_200_OK)
+
+
+@app.put("/users/{service}/{user_id}/tokens", response_model=TokenResponse, tags=["Token"])
+async def register_token(service: Service, user_id: str, request: Token):
+    """Register/modify push token (can maintain one per token type)"""
+    logger.info(request.dict())
+
+    user = await redis.hget(f'users#{service}', user_id)
+    key = f'users#{service}#{user_id}#tokens'
+
+    await redis.hset(name=key, key=request.token_type, value=request.json(ensure_ascii=False))
+
+    return TokenResponse(
+        tokens=list(map(lambda value: json.loads(value), dict(await redis.hgetall(key)).values())),
+        user=User(**json.loads(user))
+    )
+
+
+@app.delete("/users/{service}/{user_id}/tokens", tags=["Token"])
+async def delete_all_tokens(service: Service, user_id: str):
+    """Unregister whole push token"""
+    await redis.delete(f'users#{service}#{user_id}#tokens')
+
+
+@app.delete("/users/{service}/{user_id}/tokens/{token_type}/{token}", response_model=TokenObject, tags=["Token"])
+async def delete_token(service: Service, user_id: str, token_type: TokenType):
+    """Unregister specific push token"""
+    await redis.hdel(f'users#{service}#{user_id}#tokens', token_type)
+
+
+@app.post("/channels", response_model=ChannelResponse, tags=["Channel"])
+async def create_channel(request: ChannelRequest):
+    """Create channel"""
+    logger.info(request.dict())
+
+    timestamp = int(time.time() * THOUSAND_TIMES)
+    channel_id = str(uuid.uuid4())
+    users = list()
+
+    for member in request.members:
+        users.append(json.loads(await redis.hget(f'users#{member.service}', member.user_id)))
+        await redis.sadd(f'users#{member.service}#{member.user_id}#channels', channel_id)
+        await redis.hset(f'channels#{channel_id}#status', f'{member.service}#{member.user_id}#read', timestamp)
+
+    channel = Channel(
+        channel=channel_id,
+        type=request.type,
+        member_count=len(request.members),
+        members=json.dumps(users, default=pydantic_encoder, ensure_ascii=False),
+        last_message='{}',
+        created_at=timestamp
+    )
+
+    await redis.hset(f'channels#{channel_id}', mapping=channel.dict())
+
+    return ChannelResponse(channel=channel_id)
+
+
+@app.get("/channels/{service}/{user_id}", response_model=ChannelList, tags=["Channel"])
+async def list_channels(service: Service, user_id: str):
+    """List channels"""
+    channels = list()
+    channel_list = await redis.smembers(f'users#{service}#{user_id}#channels')
+
+    def decode(item):
+        try:
+            return item[0], json.loads(item[1])
+        except JSONDecodeError:
+            return item[0], item[1]
+
+    async def unread_count(cid, svc, uid) -> int:
+        last_read = await redis.hget(f'channels#{cid}#status', f'{svc}#{uid}#read')
+        query = {
+            "Statement": "select * from pickpublic_chat where channel_id=? and created_at>?",
+            "Parameters": [
+                {"S": cid}, {"N": last_read}
+            ]
+        }
+        result = await func_asyncio(dynamo_client.execute_statement, **query)
+        return len(result['Items'])
+
+    for channel_id in channel_list:
+        channel = dict(await redis.hgetall(f'channels#{channel_id}'))
+        channel = dict(map(decode, channel.items()))
+        unread_message_count: int = await unread_count(channel_id, service, user_id)
+        channels.append(ChannelListResponse(unread_message_count=unread_message_count, **channel))
+
+    return ChannelList(channels=channels)
+
+
+@app.put("/channels/{channel}/join", tags=["Channel"], deprecated=True)
+async def join_channel(channel: str, request: Member):
+    """Join the channel"""
     pass
 
 
-@app.put("/users/{service}/{user_id}", response_model=User, tags=["user"])
-async def update_user(service: Service, user_id: str, request: User) -> User:
-    """유저 정보 수정"""
+@app.put("/channels/{channel}/leave", tags=["Channel"], deprecated=True)
+async def leave_channel(channel: str, request: Member):
+    """Leave the channel"""
     pass
 
 
-@app.delete("/users/{service}/{user_id}", tags=["user"])
-async def delete_user(service: Service, user_id: str) -> None:
-    """유저 정보 삭제"""
+@app.get("/channels/{channel}/messages", response_model=list[MessageResponse], tags=["Message"])
+async def list_messages(channel: str):
+    """List messages"""
     pass
 
 
-@app.post("/users/{service}/{user_id}/tokens/{token_type}", response_model=TokenResponse, tags=["token"])
-async def register_token(service: Service, user_id: str, token_type: TokenType, request: TokenRequest) -> TokenResponse:
-    """푸시 토큰 등록"""
-    pass
-
-
-@app.delete("/users/{service}/{user_id}/tokens", tags=["token"])
-async def delete_all_tokens(service: Service, user_id: str) -> None:
-    """푸시 토큰 전체 등록 해제"""
-    pass
-
-
-@app.delete("/users/{service}/{user_id}/tokens/{token_type}/{token}", response_model=TokenObject, tags=["token"])
-async def delete_token(service: Service, user_id: str, token_type: TokenType, token: str) -> TokenObject:
-    """푸시 토큰 등록 해제"""
-    pass
-
-
-@app.get("/channels/{service}/{user_id}", response_model=list[Channel], tags=["channel"])
-async def list_channels(service: Service, user_id: str) -> list[Channel]:
-    """채팅 채널 리스트"""
-    pass
-
-
-@app.post("/channels", response_model=ChannelResponse, tags=["channel"])
-async def create_channel(request: ChannelRequest) -> ChannelResponse:
-    """채팅 채널 생성"""
-    pass
-
-
-@app.put("/channels/{channel}/join", tags=["channel"])
-async def join_channel(channel: str, request: Member) -> None:
-    """채팅 채널 입장"""
-    pass
-
-
-@app.put("/channels/{channel}/leave", tags=["channel"])
-async def join_channel(channel: str, request: Member) -> None:
-    """채팅 채널 퇴장"""
-    pass
-
-
-@app.get("/channels/{channel}/messages", response_model=list[MessageResponse], tags=["message"])
-async def list_messages(channel: str) -> list[MessageResponse]:
-    """채팅 내역 리스트"""
-    pass
-
-
-
-
-'''
-@app.get("/room/list/{user_id}", response_model=list, tags=["room"])
-async def get_room_list(user_id: str) -> list:
-    """채팅방 리스트 조회"""
-    return await redis.smembers(f"user:{user_id}:rooms")
-
-
-@app.post("/room/create", response_model=str, tags=["room"])
-async def create_room(request: RoomCreateRequest) -> str:
-    """채팅방 생성 -> 유저별 채팅방 리스트 추가 -> 채팅방 리턴"""
-    room_id = ":".join(list(request.dict().values()))
-
-    if await redis.exists(f"room:{room_id}"):
-        return room_id
-
-    for _, user_id in request:
-        await redis.sadd(f"user:{user_id}:rooms", room_id)
-
-    return room_id
-
-
-@app.get("/room/message/{room_id}", response_model=list, tags=["room"])
-async def messages(room_id: str) -> list:
-    """채팅방 메세지 조회"""
-    return await redis.zrangebyscore(f"room:{room_id}", min="-inf", max="+inf", start=0, num=MAX_MESSAGE_COUNT)
-
-
-@app.post("/chat/online/{user_id}", tags=["chat"])
-async def online(user_id: str) -> None:
-    """온라인 상태로 변경"""
-    await redis.sadd("online_users", user_id)
-
-
-@app.delete("/chat/offline/{user_id}", tags=["chat"])
-async def offline(user_id: str) -> None:
-    """오프라인 상태로 변경"""
-    await redis.srem("online_users", user_id)
-
-
-@app.get("/chat", tags=["chat"])
+@app.get("/chat", tags=["chat"], include_in_schema=False)
 async def get():
+    from starlette.responses import HTMLResponse
+    from app.html import html
     return HTMLResponse(html)
 
 
-@app.websocket("/chat/{user_id}/{room_id}")
-async def websocket_endpoint(params: ChatRequest = Depends()):
-    """웹소켓 엔드 포인트"""
-    await params.ws.accept()
-    await connection(params)
+@app.websocket("/channels/{channel}/{service}/{user_id}")
+async def websocket_endpoint(request: ChatRequest = Depends()):
+    await request.ws.accept()
+    await connection(request)
 
 
-async def connection(params: ChatRequest):
+async def connection(request: ChatRequest):
     async def client_handler(ws: WebSocket):
-        """client 메세지 처리"""
         try:
             while True:
                 message = await ws.receive_json()
                 if message:
-                    await broadcast(params.room_id, message=message)
+                    await broadcast(request.channel, message=message)
         except WebSocketDisconnect:
-            await leave(params.user_id, params.room_id)
+            await leave(request)
 
     async def pubsub_handler(ws: WebSocket):
-        """Pub/Sub 메세지 처리"""
         try:
             while True:
                 message = await pubsub.get_message(ignore_subscribe_messages=True)
@@ -184,59 +215,73 @@ async def connection(params: ChatRequest):
         except Exception as exc:
             logger.info(f'{pubsub_handler.__name__} : {exc}')
 
-    await enter(params.user_id, params.room_id)
+    await enter(request)
 
     pubsub: PubSub = redis.pubsub()
-    await pubsub.subscribe(params.room_id)
+    await pubsub.subscribe(request.channel)
 
-    pubsub_task = pubsub_handler(params.ws)
-    client_task = client_handler(params.ws)
+    pubsub_task = pubsub_handler(request.ws)
+    client_task = client_handler(request.ws)
 
     done, pending = await asyncio.wait(
         [pubsub_task, client_task], return_when=asyncio.FIRST_EXCEPTION,
     )
 
     for task in pending:
-        logger.info(f"Canceling task: {task}")
+        logger.info(f'Canceling task: {task}')
         task.cancel()
 
 
-async def enter(user_id: str, room_id: str) -> None:
-    """채팅방 접속"""
-    await redis.sadd(f"room:{room_id}:online", user_id)
+async def enter(request: ChatRequest):
+    await redis.hdel(f'channels#{request.channel}#status', f'{request.member.service}#{request.member.user_id}#read')
 
 
-async def leave(user_id: str, room_id: str) -> None:
-    """채팅방 이탈"""
-    await redis.srem(f"room:{room_id}:online", user_id)
+async def leave(request: ChatRequest):
+    await redis.hset(
+        f'channels#{request.channel}#status',
+        f'{request.member.service}#{request.member.user_id}#read',
+        int(time.time() * THOUSAND_TIMES)
+    )
 
 
-async def broadcast(room_id: str, message: dict):
-    """publish + push notification"""
+async def broadcast(channel: str, message: dict):
     logger.info(message)
-    all_user_ids: list = room_id.split(":")
-    online_user_ids: list = await redis.smembers(f"room:{room_id}:online")
-    offline_user_ids: list = list(set(all_user_ids) ^ set(online_user_ids))
+    members = json.loads(await redis.hget(f'channels#{channel}', 'members'))
 
-    message_json: str = json.dumps(message)
+    msg = MessageResponse(
+        message_id=str(uuid.uuid4()),
+        view_type=message['view_type'],
+        view=json.dumps(message['view'], default=pydantic_encoder, ensure_ascii=False),
+        created_at=message['date'],
+        created_by=await redis.hget(f"users#{message['service']}", message['from'])
+    )
 
-    """Publish"""
-    await redis.publish(room_id, message['message'])
+    msg_json = msg
+    msg_json.view = json.loads(msg_json.view)
+    msg_json.created_by = json.loads(msg_json.created_by)
 
-    """Push Notification"""
-    await push(offline_user_ids)
-
-    """redis """
-    await redis.zadd(f'room:{room_id}', {message_json: int(message['date'])})
-
-    """history"""
-    await func_asyncio(table.put_item, Item={
-        'user_id': message['from'],
-        'status': 0,
-        'message': message_json
-    })
+    await func_asyncio(table.put_item, Item={'channel_id': channel, **msg.dict()})
+    await redis.hset(f'channels#{channel}', 'last_message', msg_json.json(ensure_ascii=False))
+    await redis.publish(channel, f"{message['service']}#{message['from']}: {message['view']['message']}")
+    await push(channel, members)
 
 
-async def push(user_ids: list):
+async def push(channel: str, members: list):
+    for member in members:
+        last_read = await redis.hget(f'channels#{channel}#status', f"{member['service']}#{member['user_id']}#read")
+
+        if last_read:
+            """do push"""
+            pass
+
+
+@app.get("/channels/{channel}/{service}/{user_id}", tags=["Websocket"])
+async def fake_websocket(channel: str, service: Service, user_id: str):
+    """Try changing the protocol to websocket"""
     pass
-'''
+
+
+@app.get("/channels/_message", tags=["Websocket"])
+async def fake_websocket_message(message: Message):
+    """Format the message you send after connecting to the websocket"""
+    pass

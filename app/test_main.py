@@ -1,52 +1,54 @@
-from .main import app, redis
+import pytest
+
+from .main import app
 from fastapi.testclient import TestClient
 
-client = TestClient(app)
+service: str = "PICKME"
+user_id: str = "test"
 
 
-def test_main():
+@pytest.fixture
+def client():
+    with TestClient(app) as c:
+        yield c
+
+
+def test_main(client):
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"message": "health"}
 
 
-def test_room_list():
-    response = client.get("/room/list/1")
+def test_upsert_user(client):
+    response = client.put(f"/users/{service}/{user_id}", json={
+        "nickname": "테스트유저",
+        "source": {
+            "tmp1": "t1",
+            "tmp2": "t2"
+        },
+        "meta": {
+            "meta_tmp1": "meta_t1",
+            "meta_tmp2": "meta_t2"
+        }
+    })
     assert response.status_code == 200
 
 
-def test_room_create():
-    faker_data = {
-        "user_id": 1,
-        "target_id": 2
-    }
-    response = client.post(
-        "/room/create",
-        json=faker_data
-    )
-    assert response.status_code == 200
-    assert response == "1:2"
-
-    for key, user_id in faker_data:
-        redis.srem(f"user:{user_id}:rooms", response)
-
-
-def test_room_message():
-    response = client.get("/room/message/1:2")
+def test_register_token(client):
+    response = client.put(f"/users/{service}/{user_id}/tokens", json={
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1",
+      "token_type": "APNS",
+      "push_token": "740f4707 bebcf74f 9b7c25d4 8e335894 5f6aa01d a5ddb387 462c7eaf 61bb78ad",
+      "source": {},
+      "meta": {}
+    })
     assert response.status_code == 200
 
 
-def test_online():
-    response = client.get("/chat/online/1")
+def test_delete_user(client):
+    response = client.delete(f"/users/{service}/{user_id}")
     assert response.status_code == 200
 
 
-def test_offline():
-    response = client.get("/chat/online/1")
+def test_delete_all_tokens(client):
+    response = client.delete(f"/users/{service}/{user_id}/tokens")
     assert response.status_code == 200
-
-
-def test_websocket():
-    with client.websocket_connect("/ws/1/1:2") as ws:
-        data = ws.receive_json()
-        assert data == {"msg": "Hello WebSocket"}
