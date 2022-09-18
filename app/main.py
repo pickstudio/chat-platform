@@ -99,7 +99,7 @@ async def delete_all_tokens(service: Service, user_id: str):
     await redis.delete(f'users#{service}#{user_id}#tokens')
 
 
-@app.delete("/users/{service}/{user_id}/tokens/{token_type}/{token}", response_model=TokenObject, tags=["Token"])
+@app.delete("/users/{service}/{user_id}/tokens/{token_type}", response_model=TokenObject, tags=["Token"])
 async def delete_token(service: Service, user_id: str, token_type: TokenType):
     """Unregister specific push token"""
     await redis.hdel(f'users#{service}#{user_id}#tokens', token_type)
