@@ -3,18 +3,18 @@ import json
 import logging
 import time
 import uuid
-from json import JSONDecodeError
 from typing import Any
 
 from aioredis.client import PubSub
+from boto3.dynamodb import conditions
 from fastapi import FastAPI, status, Depends
-from fastapi.responses import JSONResponse
 from fastapi.logger import logger
+from fastapi.responses import JSONResponse
 from pydantic.json import pydantic_encoder
 from starlette.websockets import WebSocketDisconnect
 
-from .models import *
 from .db import *
+from .models import *
 from .settings import Settings
 
 app = FastAPI(
@@ -61,11 +61,15 @@ async def health_check():
 @app.put("/users/{service}/{user_id}", response_model=User, tags=["User"])
 async def upsert_user(service: Service, user_id: str, request: UserRequest):
     """Register/modify user"""
-    logger.info(request.dict())
+    user = User(
+        service=service,
+        user_id=user_id,
+        nickname=request.nickname,
+        source=json.dumps(request.source, default=pydantic_encoder, ensure_ascii=False),
+        meta=json.dumps(request.meta, default=pydantic_encoder, ensure_ascii=False)
+    )
 
-    user = User(service=service, user_id=user_id, **request.dict())
-
-    await redis.hset(name=f'users#{service}', key=user_id, value=user.json(ensure_ascii=False))
+    await redis.hset(f'users#{service}#{user_id}', mapping=user.dict())
 
     return user
 
@@ -73,58 +77,57 @@ async def upsert_user(service: Service, user_id: str, request: UserRequest):
 @app.delete("/users/{service}/{user_id}", tags=["User"])
 async def delete_user(service: Service, user_id: str):
     """Delete user"""
-    if await redis.hdel(f'users#{service}', user_id):
+    if await redis.delete(f'users#{service}#{user_id}'):
         return JSONResponse({'message': f'User deleted successfully'}, status.HTTP_200_OK)
 
 
-@app.put("/users/{service}/{user_id}/tokens", response_model=TokenResponse, tags=["Token"])
-async def register_token(service: Service, user_id: str, request: Token):
-    """Register/modify push token (can maintain one per token type)"""
-    logger.info(request.dict())
-
-    user = await redis.hget(f'users#{service}', user_id)
-    key = f'users#{service}#{user_id}#tokens'
-
-    await redis.hset(name=key, key=request.token_type, value=request.json(ensure_ascii=False))
+@app.post("/users/{service}/{user_id}/tokens/{token_type}", response_model=TokenResponse, tags=["Token"])
+async def add_token(service: Service, user_id: str, token_type: TokenType, request: TokenRequest):
+    """Add push token"""
+    user = await redis.hgetall(f'users#{service}#{user_id}')
+    await redis.sadd(f'users#{service}#{user_id}#{token_type}', request.push_token)
 
     return TokenResponse(
-        tokens=list(map(lambda value: json.loads(value), dict(await redis.hgetall(key)).values())),
-        user=User(**json.loads(user))
+        token=request.push_token,
+        token_type=token_type,
+        user=User(**user)
     )
 
 
-@app.delete("/users/{service}/{user_id}/tokens", tags=["Token"])
-async def delete_all_tokens(service: Service, user_id: str):
-    """Unregister whole push token"""
-    await redis.delete(f'users#{service}#{user_id}#tokens')
+@app.delete("/users/{service}/{user_id}/tokens/{token_type}", tags=["Token"])
+async def delete_tokens(service: Service, user_id: str, token_type: TokenType):
+    """Delete token by type"""
+    await redis.delete(f'users#{service}#{user_id}#{token_type}')
 
 
-@app.delete("/users/{service}/{user_id}/tokens/{token_type}", response_model=TokenObject, tags=["Token"])
-async def delete_token(service: Service, user_id: str, token_type: TokenType):
-    """Unregister specific push token"""
-    await redis.hdel(f'users#{service}#{user_id}#tokens', token_type)
+@app.put("/users/{service}/{user_id}/tokens/{token_type}/", response_model=TokenRemoveResponse, tags=["Token"])
+async def remove_token(service: Service, user_id: str, token_type: TokenType, request: TokenRequest):
+    """Remove specific token"""
+    await redis.srem(f'users#{service}#{user_id}#{token_type}', request.push_token)
+
+    return TokenRemoveResponse(
+        tokens=await redis.smembers(f'users#{service}#{user_id}#{token_type}'),
+        token_type=token_type,
+        user=User(**await redis.hgetall(f'users#{service}#{user_id}'))
+    )
 
 
 @app.post("/channels", response_model=ChannelResponse, tags=["Channel"])
 async def create_channel(request: ChannelRequest):
     """Create channel"""
-    logger.info(request.dict())
-
     timestamp = int(time.time() * THOUSAND_TIMES)
     channel_id = str(uuid.uuid4())
-    users = list()
+    users = []
 
     for member in request.members:
-        users.append(json.loads(await redis.hget(f'users#{member.service}', member.user_id)))
+        users.append(await redis.hgetall(f'users#{member.service}#{member.user_id}'))
         await redis.sadd(f'users#{member.service}#{member.user_id}#channels', channel_id)
-        await redis.hset(f'channels#{channel_id}#status', f'{member.service}#{member.user_id}#read', timestamp)
+        await redis.hset(f'channels#{channel_id}#members', f'{member.service}#{member.user_id}', 'joined')
+        await redis.hset(f'channels#{channel_id}#status', f'{member.service}#{member.user_id}#read', 0)
 
     channel = Channel(
         channel=channel_id,
         type=request.type,
-        member_count=len(request.members),
-        members=json.dumps(users, default=pydantic_encoder, ensure_ascii=False),
-        last_message='{}',
         created_at=timestamp
     )
 
@@ -136,31 +139,51 @@ async def create_channel(request: ChannelRequest):
 @app.get("/channels/{service}/{user_id}", response_model=ChannelList, tags=["Channel"])
 async def list_channels(service: Service, user_id: str):
     """List channels"""
-    channels = list()
+    async def get_last_message(cid) -> dict:
+        query = {
+            "IndexName": "channel_id-created_at-index",
+            "KeyConditionExpression": conditions.Key('channel_id').eq(cid),
+            "ScanIndexForward": False,
+            "Limit": 1
+        }
+        result = await func_asyncio(table.query, **query)
+        return result['Items'][0] if result['Count'] > 0 else {}
+
+    async def get_messages(cid) -> tuple:
+        last_read = await redis.hget(f'channels#{cid}#status', f'{service}#{user_id}#read')
+        query = {
+            "IndexName": "channel_id-created_at-index",
+            "KeyConditionExpression": conditions.Key('channel_id').eq(cid) &
+                                      conditions.Key('created_at').gte(int(last_read))
+        }
+        result = await func_asyncio(table.query, **query)
+        return result['Count'], await get_last_message(cid)
+
+    async def get_members(users: dict) -> tuple:
+        member_list = []
+        joined_count = 0
+        for user, state in users.items():
+            member_list.append(MemberWithState(**await redis.hgetall(f'users#{user}'), state=state))
+            if state == 'joined':
+                joined_count += 1
+        return member_list, len(users), joined_count
+
+    channels = []
     channel_list = await redis.smembers(f'users#{service}#{user_id}#channels')
 
-    def decode(item):
-        try:
-            return item[0], json.loads(item[1])
-        except JSONDecodeError:
-            return item[0], item[1]
-
-    async def unread_count(cid, svc, uid) -> int:
-        last_read = await redis.hget(f'channels#{cid}#status', f'{svc}#{uid}#read')
-        query = {
-            "Statement": "select * from pickpublic_chat where channel_id=? and created_at>?",
-            "Parameters": [
-                {"S": cid}, {"N": last_read}
-            ]
-        }
-        result = await func_asyncio(dynamo_client.execute_statement, **query)
-        return len(result['Items'])
-
     for channel_id in channel_list:
-        channel = dict(await redis.hgetall(f'channels#{channel_id}'))
-        channel = dict(map(decode, channel.items()))
-        unread_message_count: int = await unread_count(channel_id, service, user_id)
-        channels.append(ChannelListResponse(unread_message_count=unread_message_count, **channel))
+        [unread_message_count, last_message] = await get_messages(channel_id)
+        [members, member_count, joined_member_count] = await get_members(
+            await redis.hgetall(f'channels#{channel_id}#members')
+        )
+        channels.append(ChannelListResponse(
+            **await redis.hgetall(f'channels#{channel_id}'),
+            member_count=member_count,
+            joined_member_count=joined_member_count,
+            members=members,
+            unread_message_count=unread_message_count,
+            last_message=last_message
+        ))
 
     return ChannelList(channels=channels)
 
@@ -171,16 +194,26 @@ async def join_channel(channel: str, request: Member):
     pass
 
 
-@app.put("/channels/{channel}/leave", tags=["Channel"], deprecated=True)
+@app.put("/channels/{channel}/leave", tags=["Channel"])
 async def leave_channel(channel: str, request: Member):
     """Leave the channel"""
-    pass
+    await redis.hset(f'channels#{channel}#members', f'{request.service}#{request.user_id}', 'left')
+    await redis.srem(f'users#{request.service}#{request.user_id}#channels', channel)
 
 
-@app.get("/channels/{channel}/messages", response_model=list[MessageResponse], tags=["Message"])
+@app.get("/messages/{channel}", response_model=list[MessageResponse], tags=["Message"])
 async def list_messages(channel: str):
     """List messages"""
-    pass
+    async def get_messages(cid) -> dict:
+        query = {
+            "IndexName": "channel_id-created_at-index",
+            "KeyConditionExpression": conditions.Key('channel_id').eq(cid),
+            "Limit": MAX_MESSAGE_COUNT
+        }
+        result = await func_asyncio(table.query, **query)
+        return result['Items'] if result['Count'] > 0 else {}
+
+    return [MessageResponse(**message) for message in await get_messages(channel)]
 
 
 @app.get("/chat", tags=["chat"], include_in_schema=False)
@@ -215,7 +248,7 @@ async def connection(request: ChatRequest):
         except Exception as exc:
             logger.info(f'{pubsub_handler.__name__} : {exc}')
 
-    await enter(request)
+    # await enter(request)
 
     pubsub: PubSub = redis.pubsub()
     await pubsub.subscribe(request.channel)
@@ -233,7 +266,7 @@ async def connection(request: ChatRequest):
 
 
 async def enter(request: ChatRequest):
-    await redis.hdel(f'channels#{request.channel}#status', f'{request.member.service}#{request.member.user_id}#read')
+    pass
 
 
 async def leave(request: ChatRequest):
@@ -245,43 +278,41 @@ async def leave(request: ChatRequest):
 
 
 async def broadcast(channel: str, message: dict):
-    logger.info(message)
-    members = json.loads(await redis.hget(f'channels#{channel}', 'members'))
+    async def typed(msg):
+        if msg['view_type'] == 'PLAINTEXT':
+            return PlainTextView(**msg['view'])
+        elif msg['view_type'] == 'PLACE':
+            return PlaceView(**msg['view'])
+        elif msg['view_type'] == 'MEDIA':
+            return MediaView(**msg['view'])
 
-    msg = MessageResponse(
+    logger.info(message)
+    members = await redis.hkeys(f'channels#{channel}#members')
+
+    message_response = MessageResponse(
         message_id=str(uuid.uuid4()),
         view_type=message['view_type'],
-        view=json.dumps(message['view'], default=pydantic_encoder, ensure_ascii=False),
+        view=await typed(message),
         created_at=message['date'],
-        created_by=await redis.hget(f"users#{message['service']}", message['from'])
+        created_by=User(**await redis.hgetall(f"users#{message['service']}#{message['from']}"))
     )
 
-    msg_json = msg
-    msg_json.view = json.loads(msg_json.view)
-    msg_json.created_by = json.loads(msg_json.created_by)
-
-    await func_asyncio(table.put_item, Item={'channel_id': channel, **msg.dict()})
-    await redis.hset(f'channels#{channel}', 'last_message', msg_json.json(ensure_ascii=False))
+    await func_asyncio(table.put_item, Item={'channel_id': channel, **message_response.dict()})
     await redis.publish(channel, f"{message['service']}#{message['from']}: {message['view']['message']}")
     await push(channel, members)
 
 
 async def push(channel: str, members: list):
-    for member in members:
-        last_read = await redis.hget(f'channels#{channel}#status', f"{member['service']}#{member['user_id']}#read")
-
-        if last_read:
-            """do push"""
-            pass
+    pass
 
 
-@app.get("/channels/{channel}/{service}/{user_id}", tags=["Websocket"])
+@app.post("/channels/{channel}/{service}/{user_id}", tags=["Websocket"])
 async def fake_websocket(channel: str, service: Service, user_id: str):
     """Try changing the protocol to websocket"""
     pass
 
 
-@app.get("/channels/_message", tags=["Websocket"])
+@app.post("/channels/_message", tags=["Websocket"])
 async def fake_websocket_message(message: Message):
     """Format the message you send after connecting to the websocket"""
     pass

@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import Optional, Union
+from typing import Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.websockets import WebSocket
 
 
@@ -28,33 +28,31 @@ class ViewType(str, Enum):
 
 class UserRequest(BaseModel):
     nickname: str
-    source: Optional[dict]
-    meta: Optional[dict]
+    source: dict
+    meta: dict
 
 
 class User(BaseModel):
     service: Service
     user_id: str
     nickname: str
-    source: Optional[dict]
-    meta: Optional[dict]
+    source: Union[str, dict]
+    meta: Union[str, dict]
 
 
-class Token(BaseModel):
-    user_agent: str
-    token_type: TokenType
+class TokenRequest(BaseModel):
     push_token: str
-    source: Optional[dict]
-    meta: Optional[dict]
 
 
 class TokenResponse(BaseModel):
-    tokens: list[Token]
+    token: str
+    token_type: TokenType
     user: User
 
 
-class TokenObject(BaseModel):
-    tokens: list[Token]
+class TokenRemoveResponse(BaseModel):
+    tokens: list[str]
+    token_type: TokenType
     user: User
 
 
@@ -72,29 +70,24 @@ class PlaceInfo(BaseModel):
 
 class PlainTextView(BaseModel):
     message: str
-    source: Optional[dict]
-    meta: Optional[dict]
 
 
 class PlaceView(BaseModel):
     coordinate: Coordinate
     place_info: PlaceInfo
     timestamp: int
-    source: Optional[dict]
-    meta: Optional[dict]
 
 
 class MediaView(BaseModel):
     url: str
-    source: Optional[dict]
-    meta: Optional[dict]
 
 
 class Message(BaseModel):
+    service: Service
+    user: str = Field(alias="from")
     view_type: ViewType
     view: Union[PlainTextView, PlaceView, MediaView]
-    source: Optional[dict]
-    meta: Optional[dict]
+    date: int
 
 
 class MessageResponse(BaseModel):
@@ -110,12 +103,18 @@ class Member(BaseModel):
     user_id: str
 
 
+class MemberWithState(BaseModel):
+    service: Service
+    user_id: str
+    nickname: str
+    state: str
+    source: Union[str, dict]
+    meta: Union[str, dict]
+
+
 class Channel(BaseModel):
     channel: str
     type: ChannelType
-    member_count: int
-    members: Union[list[User], str]
-    last_message: Union[MessageResponse, str, dict]
     created_at: int
 
 
@@ -123,7 +122,8 @@ class ChannelListResponse(BaseModel):
     channel: str
     type: ChannelType
     member_count: int
-    members: Union[list[User], str]
+    joined_member_count: int
+    members: Union[list[MemberWithState], str]
     unread_message_count: int
     last_message: Union[MessageResponse, str, dict]
     created_at: int
