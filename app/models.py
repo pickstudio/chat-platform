@@ -87,7 +87,7 @@ class Message(BaseModel):
     user: str = Field(alias="from")
     view_type: ViewType
     view: Union[PlainTextView, PlaceView, MediaView]
-    date: int
+    date: int = Field(example=1665065862437)
 
 
 class MessageResponse(BaseModel):
