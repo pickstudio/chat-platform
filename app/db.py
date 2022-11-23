@@ -1,7 +1,7 @@
 from typing import Callable
 
 import aioredis
-from boto3 import resource, client
+from boto3 import resource
 from aioredis import Redis
 from fastapi.concurrency import run_in_threadpool
 
@@ -26,16 +26,6 @@ async def get_redis_pool() -> Redis:
 async def get_dynamo():
     return await func_asyncio(
         func=resource,
-        service_name='dynamodb',
-        aws_access_key_id=settings.boto3.aws_access_key_id,
-        aws_secret_access_key=settings.boto3.aws_secret_access_key,
-        region_name=settings.boto3.region_name
-    )
-
-
-async def get_dynamo_client():
-    return await func_asyncio(
-        func=client,
         service_name='dynamodb',
         aws_access_key_id=settings.boto3.aws_access_key_id,
         aws_secret_access_key=settings.boto3.aws_secret_access_key,

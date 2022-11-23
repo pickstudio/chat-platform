@@ -98,6 +98,11 @@ class MessageResponse(BaseModel):
     created_by: Union[User, str]
 
 
+class MessageListResponse(BaseModel):
+    last_read_time: int
+    messages: list[MessageResponse]
+
+
 class Member(BaseModel):
     service: Service
     user_id: str

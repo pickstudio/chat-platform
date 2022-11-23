@@ -3,11 +3,12 @@ import json
 import logging
 import time
 import uuid
+from functools import wraps
 from typing import Any
 
 from aioredis.client import PubSub
 from boto3.dynamodb import conditions
-from fastapi import FastAPI, status, Depends
+from fastapi import FastAPI, status, Depends, Request
 from fastapi.logger import logger
 from fastapi.responses import JSONResponse
 from pydantic.json import pydantic_encoder
@@ -16,6 +17,7 @@ from starlette.websockets import WebSocketDisconnect
 from .db import *
 from .models import *
 from .settings import Settings
+
 
 app = FastAPI(
     title="Pick Chat",
@@ -29,7 +31,6 @@ app = FastAPI(
 settings = Settings()
 redis: Union[Redis, None] = None
 table: Any = None
-dynamo_client: Any = None
 
 gunicorn_logger = logging.getLogger('gunicorn.error')
 logger.handlers = gunicorn_logger.handlers
@@ -39,18 +40,34 @@ THOUSAND_TIMES: int = 1000
 MAX_MESSAGE_COUNT: int = 300
 
 
+def log_request(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        logger.info(f"[{func.__name__}] {kwargs}")
+        return await func(*args, **kwargs)
+
+    return wrapper
+
+
 @app.on_event('startup')
 async def startup():
-    global redis, table, dynamo_client
+    global redis, table
     redis = await get_redis_pool()
-    dynamo = await get_dynamo()
-    dynamo_client = await get_dynamo_client()
-    table = await get_table(dynamo)
+    table = await get_table(await get_dynamo())
 
 
 @app.on_event('shutdown')
 async def shutdown():
     await redis.close()
+
+
+@app.middleware("http")
+async def except_logging_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        logger.info(e)
+        return JSONResponse({"message": e}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @app.get("/", status_code=200, include_in_schema=False)
@@ -59,6 +76,7 @@ async def health_check():
 
 
 @app.put("/users/{service}/{user_id}", response_model=User, tags=["User"])
+@log_request
 async def upsert_user(service: Service, user_id: str, request: UserRequest):
     """Register/modify user"""
     user = User(
@@ -68,13 +86,13 @@ async def upsert_user(service: Service, user_id: str, request: UserRequest):
         source=json.dumps(request.source, default=pydantic_encoder, ensure_ascii=False),
         meta=json.dumps(request.meta, default=pydantic_encoder, ensure_ascii=False)
     )
-
     await redis.hset(f'users#{service}#{user_id}', mapping=user.dict())
 
     return user
 
 
 @app.delete("/users/{service}/{user_id}", tags=["User"])
+@log_request
 async def delete_user(service: Service, user_id: str):
     """Delete user"""
     if await redis.delete(f'users#{service}#{user_id}'):
@@ -82,6 +100,7 @@ async def delete_user(service: Service, user_id: str):
 
 
 @app.post("/users/{service}/{user_id}/tokens/{token_type}", response_model=TokenResponse, tags=["Token"])
+@log_request
 async def add_token(service: Service, user_id: str, token_type: TokenType, request: TokenRequest):
     """Add push token"""
     user = await redis.hgetall(f'users#{service}#{user_id}')
@@ -95,12 +114,14 @@ async def add_token(service: Service, user_id: str, token_type: TokenType, reque
 
 
 @app.delete("/users/{service}/{user_id}/tokens/{token_type}", tags=["Token"])
+@log_request
 async def delete_tokens(service: Service, user_id: str, token_type: TokenType):
     """Delete token by type"""
     await redis.delete(f'users#{service}#{user_id}#{token_type}')
 
 
 @app.put("/users/{service}/{user_id}/tokens/{token_type}/", response_model=TokenRemoveResponse, tags=["Token"])
+@log_request
 async def remove_token(service: Service, user_id: str, token_type: TokenType, request: TokenRequest):
     """Remove specific token"""
     await redis.srem(f'users#{service}#{user_id}#{token_type}', request.push_token)
@@ -113,6 +134,7 @@ async def remove_token(service: Service, user_id: str, token_type: TokenType, re
 
 
 @app.post("/channels", response_model=ChannelResponse, tags=["Channel"])
+@log_request
 async def create_channel(request: ChannelRequest):
     """Create channel"""
     timestamp = int(time.time() * THOUSAND_TIMES)
@@ -136,29 +158,35 @@ async def create_channel(request: ChannelRequest):
     return ChannelResponse(channel=channel_id)
 
 
+async def get_last_message(channel_id: str) -> dict:
+    query = {
+        "IndexName": "channel_id-created_at-index",
+        "KeyConditionExpression": conditions.Key('channel_id').eq(channel_id),
+        "ScanIndexForward": False,
+        "Limit": 1
+    }
+    result = await func_asyncio(table.query, **query)
+    return result['Items'][0] if result['Count'] > 0 else {}
+
+
+async def get_last_read_time(service: str, user_id: str, channel_id: str) -> int:
+    return int(await redis.hget(f'channels#{channel_id}#status', f'{service}#{user_id}#read'))
+
+
+async def get_unread_message_count(service: str, user_id: str, channel_id: str) -> int:
+    query = {
+        "IndexName": "channel_id-created_at-index",
+        "KeyConditionExpression": conditions.Key('channel_id').eq(channel_id) &
+                                  conditions.Key('created_at').gte(await get_last_read_time(service, user_id, channel_id))
+    }
+    result = await func_asyncio(table.query, **query)
+    return result['Count']
+
+
 @app.get("/channels/{service}/{user_id}", response_model=ChannelList, tags=["Channel"])
+@log_request
 async def list_channels(service: Service, user_id: str):
     """List channels"""
-    async def get_last_message(cid) -> dict:
-        query = {
-            "IndexName": "channel_id-created_at-index",
-            "KeyConditionExpression": conditions.Key('channel_id').eq(cid),
-            "ScanIndexForward": False,
-            "Limit": 1
-        }
-        result = await func_asyncio(table.query, **query)
-        return result['Items'][0] if result['Count'] > 0 else {}
-
-    async def get_messages(cid) -> tuple:
-        last_read = await redis.hget(f'channels#{cid}#status', f'{service}#{user_id}#read')
-        query = {
-            "IndexName": "channel_id-created_at-index",
-            "KeyConditionExpression": conditions.Key('channel_id').eq(cid) &
-                                      conditions.Key('created_at').gte(int(last_read))
-        }
-        result = await func_asyncio(table.query, **query)
-        return result['Count'], await get_last_message(cid)
-
     async def get_members(users: dict) -> tuple:
         member_list = []
         joined_count = 0
@@ -172,7 +200,6 @@ async def list_channels(service: Service, user_id: str):
     channel_list = await redis.smembers(f'users#{service}#{user_id}#channels')
 
     for channel_id in channel_list:
-        [unread_message_count, last_message] = await get_messages(channel_id)
         [members, member_count, joined_member_count] = await get_members(
             await redis.hgetall(f'channels#{channel_id}#members')
         )
@@ -181,39 +208,49 @@ async def list_channels(service: Service, user_id: str):
             member_count=member_count,
             joined_member_count=joined_member_count,
             members=members,
-            unread_message_count=unread_message_count,
-            last_message=last_message
+            unread_message_count=await get_unread_message_count(service, user_id, channel_id),
+            last_message=await get_last_message(channel_id)
         ))
 
     return ChannelList(channels=channels)
 
 
 @app.put("/channels/{channel}/join", tags=["Channel"], deprecated=True)
+@log_request
 async def join_channel(channel: str, request: Member):
     """Join the channel"""
     pass
 
 
 @app.put("/channels/{channel}/leave", tags=["Channel"])
+@log_request
 async def leave_channel(channel: str, request: Member):
     """Leave the channel"""
     await redis.hset(f'channels#{channel}#members', f'{request.service}#{request.user_id}', 'left')
     await redis.srem(f'users#{request.service}#{request.user_id}#channels', channel)
 
 
-@app.get("/messages/{channel}", response_model=list[MessageResponse], tags=["Message"])
-async def list_messages(channel: str):
+@app.get("/messages/{service}/{user_id}/{channel}", response_model=MessageListResponse, tags=["Message"])
+@log_request
+async def list_messages(service: Service, user_id: str, channel: str):
     """List messages"""
-    async def get_messages(cid) -> dict:
+    async def count() -> int:
+        message_count = await get_unread_message_count(service, user_id, channel)
+        return message_count if message_count > 0 else MAX_MESSAGE_COUNT
+
+    async def get_messages() -> dict:
         query = {
             "IndexName": "channel_id-created_at-index",
-            "KeyConditionExpression": conditions.Key('channel_id').eq(cid),
-            "Limit": MAX_MESSAGE_COUNT
+            "KeyConditionExpression": conditions.Key('channel_id').eq(channel),
+            "Limit": await count()
         }
         result = await func_asyncio(table.query, **query)
         return result['Items'] if result['Count'] > 0 else {}
 
-    return [MessageResponse(**message) for message in await get_messages(channel)]
+    return MessageListResponse(
+        last_read_time=await get_last_read_time(service, user_id, channel),
+        messages=[MessageResponse(**message) for message in await get_messages()]
+    )
 
 
 @app.get("/chat", tags=["chat"], include_in_schema=False)
@@ -248,7 +285,7 @@ async def connection(request: ChatRequest):
         except Exception as exc:
             logger.info(f'{pubsub_handler.__name__} : {exc}')
 
-    # await enter(request)
+    await enter(request)
 
     pubsub: PubSub = redis.pubsub()
     await pubsub.subscribe(request.channel)
@@ -266,7 +303,11 @@ async def connection(request: ChatRequest):
 
 
 async def enter(request: ChatRequest):
-    pass
+    await redis.hset(
+        f'channels#{request.channel}#status',
+        f'{request.member.service}#{request.member.user_id}#read',
+        int(time.time() * THOUSAND_TIMES)
+    )
 
 
 async def leave(request: ChatRequest):
@@ -277,6 +318,7 @@ async def leave(request: ChatRequest):
     )
 
 
+@log_request
 async def broadcast(channel: str, message: dict):
     async def typed(msg):
         if msg['view_type'] == 'PLAINTEXT':
@@ -286,7 +328,6 @@ async def broadcast(channel: str, message: dict):
         elif msg['view_type'] == 'MEDIA':
             return MediaView(**msg['view'])
 
-    logger.info(message)
     members = await redis.hkeys(f'channels#{channel}#members')
 
     message_response = MessageResponse(
