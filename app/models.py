@@ -2,7 +2,6 @@ from enum import Enum
 from typing import Union
 
 from pydantic import BaseModel, Field
-from starlette.websockets import WebSocket
 
 
 class Service(str, Enum):
@@ -57,15 +56,15 @@ class TokenRemoveResponse(BaseModel):
 
 
 class Coordinate(BaseModel):
-    latitude: float
-    longitude: float
+    latitude: str
+    longitude: str
 
 
 class PlaceInfo(BaseModel):
     name: str
     parent_name: str
     category: str
-    star_point: float
+    star_point: str
 
 
 class PlainTextView(BaseModel):
@@ -84,10 +83,16 @@ class MediaView(BaseModel):
 
 class Message(BaseModel):
     service: Service
-    user: str = Field(alias="from")
+    user_id: str
+    channel_id: str
     view_type: ViewType
     view: Union[PlainTextView, PlaceView, MediaView]
     date: int = Field(example=1665065862437)
+
+
+class MessageRequest(BaseModel):
+    service: Service
+    user_id: str
 
 
 class MessageResponse(BaseModel):
@@ -140,21 +145,8 @@ class ChannelList(BaseModel):
 
 class ChannelRequest(BaseModel):
     members: list[Member]
-    type: ChannelType
 
 
 class ChannelResponse(BaseModel):
     channel: str
-
-
-class ChatRequest:
-    def __init__(
-        self,
-        ws: WebSocket,
-        channel: str,
-        service: Service,
-        user_id: str
-    ):
-        self.ws = ws
-        self.channel = channel
-        self.member = Member(service=service, user_id=user_id)
+    type: ChannelType

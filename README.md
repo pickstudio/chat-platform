@@ -1,9 +1,8 @@
 # Chat Platform
 ```
-service --> http --> user, token, channel, message history
-service --> ws --> pub/sub --> http --> push
+other service --> [chat-platofrm]http server --> push-platform  
 ```
-![(pickpublic-chat-platform.png](pickpublic-chat-platform.png)
+![openapi.png](openapi.png)
 
 ## OpenAPI Docs
 아래의 경로를 통해 API 명세 확인 가능
@@ -11,7 +10,6 @@ service --> ws --> pub/sub --> http --> push
 path : /docs
        /redoc
 ```
-![swagger.png](swagger.png)
 
 
 ### User
@@ -25,15 +23,20 @@ path : /docs
 
 ### Channel
 * 멤버 정보 입력을 통해 채널 생성
-* 특정 유저의 채널 리스트 확인
-* 특정 채널 떠나기
+* 채널 리스트 조회
+* 채널 떠나기
 
 ### Message
-* 특정 채널의 메세지 리스트 확인
+* 메세지 리스트 조회
+* 메세지 전송
+* 메세지 읽음 처리
 
-### WebSocket
-> 현재 openapi에서는 http만 지원해주고 있기 때문에 fake로 작성
-* 웹소켓 연결 후 `/channels/_message`에 적혀진 포맷으로 메세지 전송
+
+## Stack
+* Python 3.9
+* FastAPI 0.78
+* Redis
+* AWS DynamoDB
 
 
 ## Getting Started
@@ -44,8 +47,8 @@ path : /docs
 cp .env.sample .env 
 ```
 
-2. 설정
-* `.env`파일에 환경변수 입력
+2. 입력
+* `.env` 파일에 환경변수 입력
 
 3. 실행
 ```
