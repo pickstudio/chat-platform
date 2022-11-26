@@ -6,4 +6,4 @@ COPY . /code/
 RUN pip install -r requirements.txt
 
 EXPOSE "9000"
-# CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80", "--reload"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:9000"]
