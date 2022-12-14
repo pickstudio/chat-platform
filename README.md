@@ -1,8 +1,8 @@
 # Chat Platform
 ```
-client <—> websocket —> [celery] —> dynamodb
+client <--ws-—> message —> [celery] —> dynamodb
                ㄴ <—> redis (pub/sub)
-client -—> api —> redis (session storage)
+client --http-—> api —> redis (session storage)
 ```
 ![openapi.png](openapi.png)
 
