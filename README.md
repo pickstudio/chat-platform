@@ -1,7 +1,7 @@
 # Chat Platform
 ```
 client <--ws-—> message —> [celery] —> dynamodb
-               ㄴ <—> redis (pub/sub)
+                  ㄴ <—> redis (pub/sub)
 client --http-—> api —> redis (session storage)
 ```
 ![openapi.png](openapi.png)
