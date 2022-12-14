@@ -19,9 +19,9 @@ services:
   chat-api:
     container_name: chat-api
     build:
-      context: /api
-      dockerfile: .
-    command: gunicorn -k uvicorn.workers.UvicornWorker api.main:app --bind 0.0.0.0:9000 --reload
+      context: .
+      dockerfile: server/api/.
+    command: gunicorn -k uvicorn.workers.UvicornWorker server.api.main:app --bind 0.0.0.0:9000 --reload
     volumes:
       - .:/code
     expose:
@@ -30,9 +30,9 @@ services:
   chat-message:
     container_name: chat-message
     build:
-      context: /message
-      dockerfile: .
-    command: gunicorn -k uvicorn.workers.UvicornWorker message.main:app --bind 0.0.0.0:9001 --reload
+      context: .
+      dockerfile: server/message/.
+    command: gunicorn -k uvicorn.workers.UvicornWorker server.message.main:app --bind 0.0.0.0:9001 --reload
     volumes:
       - .:/code
     expose:

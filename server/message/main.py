@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import time
 import uuid
@@ -7,11 +6,8 @@ from functools import wraps
 from typing import Any
 
 from aioredis.client import PubSub
-from boto3.dynamodb import conditions
-from fastapi import FastAPI, status, Depends, Request
+from fastapi import FastAPI, Depends
 from fastapi.logger import logger
-from fastapi.responses import JSONResponse
-from pydantic.json import pydantic_encoder
 from starlette.websockets import WebSocketDisconnect
 
 from config.db import *
@@ -54,7 +50,7 @@ async def shutdown():
 @app.get("/chat", tags=["chat"], include_in_schema=False)
 async def get():
     from starlette.responses import HTMLResponse
-    from message.html import html
+    from server.message.html import html
     return HTMLResponse(html)
 
 
