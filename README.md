@@ -1,6 +1,8 @@
 # Chat Platform
 ```
-other service --> [chat-platofrm]http server --> push-platform  
+client <—> websocket —> [celery] —> dynamodb
+               ㄴ <—> redis (pub/sub)
+client -—> api —> redis (session storage)
 ```
 ![openapi.png](openapi.png)
 
