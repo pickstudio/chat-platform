@@ -5,7 +5,7 @@ from boto3 import resource
 from aioredis import Redis
 from fastapi.concurrency import run_in_threadpool
 
-from app.settings import Settings
+from config.settings import Settings
 
 settings = Settings()
 

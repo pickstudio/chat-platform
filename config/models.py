@@ -2,6 +2,7 @@ from enum import Enum
 from typing import Union
 
 from pydantic import BaseModel, Field
+from fastapi import WebSocket
 
 
 class Service(str, Enum):
@@ -150,3 +151,16 @@ class ChannelRequest(BaseModel):
 class ChannelResponse(BaseModel):
     channel: str
     type: ChannelType
+
+
+class ChatRequest:
+    def __init__(
+            self,
+            ws: WebSocket,
+            channel: str,
+            service: Service,
+            user_id: str
+    ):
+        self.ws = ws
+        self.channel = channel
+        self.member = Member(service=service, user_id=user_id)

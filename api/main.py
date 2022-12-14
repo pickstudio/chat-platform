@@ -11,9 +11,9 @@ from fastapi.logger import logger
 from fastapi.responses import JSONResponse
 from pydantic.json import pydantic_encoder
 
-from .db import *
-from .models import *
-from .settings import Settings
+from config.db import *
+from config.models import *
+from config.settings import Settings
 
 
 app = FastAPI(

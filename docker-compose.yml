@@ -12,14 +12,28 @@ services:
       dockerfile: .
     ports:
       - "80:80"
+      - "8080:8080"
     depends_on:
       - chat-api
 
   chat-api:
     container_name: chat-api
-    build: .
-    command: gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:9000 --reload
+    build:
+      context: /api
+      dockerfile: .
+    command: gunicorn -k uvicorn.workers.UvicornWorker api.main:app --bind 0.0.0.0:9000 --reload
     volumes:
       - .:/code
     expose:
       - "9000"
+
+  chat-message:
+    container_name: chat-message
+    build:
+      context: /message
+      dockerfile: .
+    command: gunicorn -k uvicorn.workers.UvicornWorker message.main:app --bind 0.0.0.0:9001 --reload
+    volumes:
+      - .:/code
+    expose:
+      - "9001"
