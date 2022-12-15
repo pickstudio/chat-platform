@@ -1,25 +1,22 @@
 import json
-import logging
 import time
 import uuid
-from functools import wraps
 from typing import Any
 
 from boto3.dynamodb import conditions
 from fastapi import FastAPI, status, Request
-from fastapi.logger import logger
 from fastapi.responses import JSONResponse
 from pydantic.json import pydantic_encoder
 
 from config.db import *
 from config.models import *
 from config.settings import Settings
-
+from config.logging import logger, log_request
 
 app = FastAPI(
-    title="Pick Chat",
+    title="Chat API",
     version="0.1.0",
-    description="픽스튜디오 채팅 플랫폼",
+    description="Pickstudio chat api server",
     contact={
         "name": "Heyho",
         "email": "nerolizm@gmail.com"
@@ -29,21 +26,8 @@ settings = Settings()
 redis: Union[Redis, None] = None
 table: Any = None
 
-gunicorn_logger = logging.getLogger('gunicorn.error')
-logger.handlers = gunicorn_logger.handlers
-logger.setLevel(logging.DEBUG)
-
 THOUSAND_TIMES: int = 1000
 MAX_MESSAGE_COUNT: int = 300
-
-
-def log_request(func):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        logger.info(f"[{func.__name__}] {kwargs}")
-        return await func(*args, **kwargs)
-
-    return wrapper
 
 
 @app.on_event('startup')
@@ -271,34 +255,6 @@ async def list_messages(service: Service, user_id: str, channel_id: str):
         last_read_time=await get_last_read_time(service, user_id, channel_id),
         messages=[MessageResponse(**message) for message in await get_messages()]
     )
-
-
-@app.post("/messages", response_model=MessageResponse, tags=["Message"])
-@log_request
-async def send_message(request: Message):
-    """Send a message"""
-    async def push(members):
-        pass
-
-    async def broadcast():
-        message_response = MessageResponse(
-            message_id=str(uuid.uuid4()),
-            view_type=request.view_type,
-            view=request.view,
-            created_at=request.date,
-            created_by=User(**await redis.hgetall(f"users#{request.service}#{request.user_id}"))
-        )
-
-        await func_asyncio(table.put_item, Item={'channel_id': request.channel_id, **message_response.dict()})
-        await marked_as_read(request.service, request.user_id, request.channel_id, request.date)
-        await push(await redis.hkeys(f'channels#{request.channel_id}#members'))
-
-        return message_response
-
-    if not await member_exists(request.service, request.user_id):
-        return JSONResponse({'message': f"[{request.service}] '{request.user_id}' is not exists"}, status.HTTP_400_BAD_REQUEST)
-
-    return await broadcast()
 
 
 @app.put("/messages/{channel_id}/read", tags=["Message"])

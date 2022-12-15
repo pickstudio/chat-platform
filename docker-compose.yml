@@ -11,29 +11,24 @@ services:
       context: nginx/
       dockerfile: .
     ports:
-      - "80:80"
-      - "8080:8080"
+      - "19000:9000"
+      - "19001:9001"
     depends_on:
       - chat-api
+      - chat-message
 
   chat-api:
     container_name: chat-api
     build:
       context: .
-      dockerfile: server/api/.
-    command: gunicorn -k uvicorn.workers.UvicornWorker server.api.main:app --bind 0.0.0.0:9000 --reload
+      dockerfile: dockerfile.api
     volumes:
       - .:/code
-    expose:
-      - "9000"
 
   chat-message:
     container_name: chat-message
     build:
       context: .
-      dockerfile: server/message/.
-    command: gunicorn -k uvicorn.workers.UvicornWorker server.message.main:app --bind 0.0.0.0:9001 --reload
+      dockerfile: dockerfile.message
     volumes:
       - .:/code
-    expose:
-      - "9001"

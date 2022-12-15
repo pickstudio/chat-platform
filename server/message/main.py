@@ -1,38 +1,31 @@
 import asyncio
-import logging
 import time
 import uuid
-from functools import wraps
 from typing import Any
 
 from aioredis.client import PubSub
 from fastapi import FastAPI, Depends
-from fastapi.logger import logger
 from starlette.websockets import WebSocketDisconnect
 
 from config.db import *
 from config.models import *
 from config.settings import Settings
+from config.logging import logger, log_request
 
-app = FastAPI()
+app = FastAPI(
+    title="Chat Message",
+    version="0.1.0",
+    description="Pickstudio chat message server",
+    contact={
+        "name": "Heyho",
+        "email": "nerolizm@gmail.com"
+    }
+)
 settings = Settings()
 redis: Union[Redis, None] = None
 table: Any = None
 
-gunicorn_logger = logging.getLogger('gunicorn.error')
-logger.handlers = gunicorn_logger.handlers
-logger.setLevel(logging.DEBUG)
-
 THOUSAND_TIMES: int = 1000
-
-
-def log_request(func):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        logger.info(f"[{func.__name__}] {kwargs}")
-        return await func(*args, **kwargs)
-
-    return wrapper
 
 
 @app.on_event('startup')
@@ -126,7 +119,7 @@ async def broadcast(channel: str, message: dict):
     )
 
     await func_asyncio(table.put_item, Item={'channel_id': channel, **message_response.dict()})
-    await redis.publish(channel, f"{message['service']}#{message['from']}: {message['view']['message']}")
+    await redis.publish(channel, message_response.json(ensure_ascii=False))
     await push(await redis.hkeys(f'channels#{channel}#members'))
 
 
@@ -136,7 +129,7 @@ async def fake_websocket(channel: str, service: Service, user_id: str):
     pass
 
 
-@app.post("/channels/_message", tags=["Websocket"])
+@app.post("/channels/_message", response_model=MessageResponse, tags=["Websocket"])
 async def fake_websocket_message(message: Message):
     """Format the message you send after connecting to the websocket"""
     pass

@@ -6,7 +6,10 @@ client <--ws-—> message —> [celery] —-> dynamodb (message storage)
 client --http-—> api —> redis (session storage)
                      ㄴ> dynamodb (message storage)
 ```
-![openapi.png](openapi.png)
+
+## Port
+* 19000 : api server
+* 19001 : message server
 
 ## OpenAPI Docs
 아래의 경로를 통해 API 명세 확인 가능
@@ -39,8 +42,9 @@ path : /docs
 ## Stack
 * Python 3.9
 * FastAPI 0.78
-* Redis
-* AWS DynamoDB
+  * WebSocket
+* Redis (Session Storage)
+* AWS DynamoDB (Message Storage) 
 
 
 ## Getting Started
